@@ -1,97 +1,118 @@
-# Portfolio Optimization App
+# PortOpt
 
-An interactive web application for quantitative portfolio analysis and optimization, implementing modern mean–variance optimization and backtesting workflows using Streamlit, Plotly, and CVXPY.
+**Given any set of stocks, find the allocation that maximises return per unit of risk — then prove it holds up.**
 
-**Live App:** [https://adityachauhanx07.github.io/port-opt/](https://adityachauhanx07.github.io/port-opt/)
-
----
-## Overview
-
-This application provides an end-to-end framework for constructing and evaluating optimized portfolios. Users can fetch historical data from Yahoo Finance, estimate expected returns and covariances, visualize the efficient frontier, and backtest the resulting strategy against benchmarks. The interface enables dynamic experimentation with assets, bounds, and parameters through an intuitive Streamlit dashboard.
+[![Live App](https://img.shields.io/badge/Live%20App-Streamlit-FF4B4B?style=flat-square&logo=streamlit)](https://adityachauhanx07-port-opt.streamlit.app/)
+[![Landing Page](https://img.shields.io/badge/Landing%20Page-GitHub%20Pages-0a0a0a?style=flat-square&logo=github)](https://adityachauhanx07.github.io/port-opt/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-c8502a?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/AdityaChauhanX07/port-opt/ci.yml?style=flat-square&label=CI)](https://github.com/AdityaChauhanX07/port-opt/actions)
 
 ---
 
-## Core Features
-- **Data Pipeline:** Automated price retrieval via `yfinance`, with preprocessing, alignment, and cleaning.  
-- **Return Models:** Support for log and simple returns, with adjustable lookback frequency.  
-- **Optimization Engine:** Mean–variance optimization powered by `cvxpy`, supporting long-only constraints and custom bounds.  
-- **Visualization:** Interactive efficient frontier, maximum Sharpe portfolio highlight, and performance metrics rendered with Plotly.  
-- **Backtesting:** Static portfolio backtest with cumulative equity curve, drawdown visualization, and benchmark comparison.  
-- **Export:** Downloadable CSV outputs for portfolio weights, metrics, and frontier data.
+![PortOpt Landing Page](1.png)
 
 ---
 
-## Technology Stack
-| Layer | Components |
-|--------|-------------|
-| **Frontend** | Streamlit, Plotly, Pandas |
-| **Backend** | NumPy, CVXPY, Yahoo Finance API |
-| **Testing & CI** | Pytest, GitHub Actions |
-| **Deployment** | Streamlit Cloud |
+## What it does
+
+Most investors either pick stocks by gut feel or dump everything into an index fund. PortOpt sits in between — it takes your chosen assets, estimates how they move relative to each other, and solves for the exact allocation where you get the most return for the risk you're taking. Then it backtests that portfolio across real market history, including through 2008, COVID, and the 2022 rate shock, so you can see whether the math actually holds.
+
+It's not a trading platform. It's a research tool for asking better questions about risk and return.
 
 ---
-## Directory Structure
+
+![The Optimizer in Action](2.png)
+
+---
+
+## Algorithms
+
+Five approaches, each with a different philosophy:
+
+| Algorithm | What it does | When to use it |
+|-----------|-------------|----------------|
+| **Markowitz MVO** | Traces the full efficient frontier using mean-variance optimization with covariance shrinkage | Starting point for any analysis |
+| **HRP** | Hierarchical Risk Parity — uses clustering instead of matrix inversion, making it robust to estimation error | When your return estimates feel uncertain |
+| **Risk Parity** | Allocates so each asset contributes equally to total portfolio risk | Naturally defensive, good for mixed asset classes |
+| **CVaR Minimization** | Minimizes the expected loss in the worst 5% of scenarios | When tail risk is the priority |
+| **Robust MVO** | Ellipsoidal uncertainty sets on expected returns — finds portfolios that survive even when your estimates are wrong | Conservative, real-world oriented |
+
+---
+
+## Features
+
+- **Data** — pulls adjusted prices from Yahoo Finance for any tickers, any date range, daily/weekly/monthly frequency
+- **Efficient frontier** — interactive chart with every risk/return tradeoff plotted, max-Sharpe portfolio highlighted
+- **Walk-forward backtest** — rolling rebalancing with configurable transaction costs and slippage, not just a static in-sample fit
+- **Benchmarks** — automatic comparison against equal-weight, SPY, 60/40, and All Weather portfolios
+- **IS/OOS split** — define an out-of-sample period and see if the strategy actually generalises
+- **Monte Carlo** — GBM simulation with fan chart showing the 5th/25th/50th/75th/95th percentile paths
+- **Bootstrap Sharpe CI** — block bootstrap to estimate whether your Sharpe ratio is statistically meaningful
+- **Stress tests** — performance during the Global Financial Crisis, COVID crash, and 2022 rate shock
+- **3D correlation globe** — Three.js visualisation of asset correlations
+- **Sankey rebalancing flows** — see how weights shift between consecutive rebalance dates
+
+---
+
+## Stack
+
 ```
-port-opt/
-│
-├── src/
-│   └── portopt/
-│       ├── app/                # Streamlit user interface
-│       ├── core/               # Core analytics and optimization modules
-│       └── __init__.py
-│
-├── tests/                      # Unit and integration tests
-│
-├── requirements.txt            # Dependencies
-├── runtime.txt                 # Python version (for Streamlit Cloud)
-├── .github/workflows/ci.yml    # CI pipeline configuration
-└── README.md                   # Documentation
+Python · NumPy · Pandas · CVXPY · Streamlit · Plotly · yfinance · SciPy · scikit-learn
 ```
+
+CI via GitHub Actions. Deployed on Streamlit Community Cloud.
+
 ---
-## Local Setup
-### 1. Clone the repository
+
+## Run locally
+
 ```bash
 git clone https://github.com/AdityaChauhanX07/port-opt.git
 cd port-opt
-```
-### 2. Create and activate a virtual environment
-```bash
 python -m venv .venv
-.venv\Scripts\activate   # On Windows
-# source .venv/bin/activate   # On macOS/Linux
-```
-### 3. Install dependencies
-```bash
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS / Linux
 pip install -r requirements.txt
-```
-### 4. Run the application
-```bash
 streamlit run src/portopt/app/ui.py
 ```
+
+Then open `http://localhost:8501`.
+
 ---
-## Example Usage
-1. Input ticker symbols such as:
+
+## Project structure
+
 ```
-AAPL, MSFT, TLT, GLD, IWM, SPY
+port-opt/
+├── src/portopt/
+│   ├── app/
+│   │   └── ui.py           # Streamlit interface
+│   └── core/
+│       ├── data.py         # Price fetching and cleaning
+│       ├── stats.py        # Returns, equity curves, drawdowns
+│       ├── opt.py          # Frontier, HRP, CVaR, Risk Parity, Robust MVO
+│       ├── risk.py         # VaR, CVaR, rolling Sharpe/Sortino
+│       ├── mc.py           # Monte Carlo simulation
+│       ├── hrp.py          # Hierarchical Risk Parity
+│       └── backtest.py     # Static and walk-forward backtesting
+├── tests/
+├── index.html              # Landing page (GitHub Pages)
+├── requirements.txt
+└── runtime.txt
 ```
-2. Choose frequency (Daily / Weekly / Monthly) and return model (Log / Simple).
-3. Load the data and compute portfolio statistics.
-4. Solve for the efficient frontier and inspect results.
-5. Backtest and compare with equal-weight and market portfolios.
-6. Export results for further analysis.
+
 ---
-## Testing
-Automated tests verify data consistency, optimization stability, and calculation correctness.
-Run locally using:
+
+## Tests
+
 ```bash
 pytest
 ```
+
 ---
-## Deployment
-The application is continuously deployed via Streamlit Cloud using GitHub Actions.
-- Pushes to `main` trigger the CI workflow.
-- CI runs unit tests and lints code before deployment.
-- Streamlit Cloud automatically rebuilds the app environment based on `requirements.txt` and `runtime.txt`.
+
+*Not financial advice. This is a research and learning tool.*
+
 ---
-## License
-This repository is distributed under the MIT License. See the LICENSE file for details.
+
+MIT License © Aditya Chauhan
