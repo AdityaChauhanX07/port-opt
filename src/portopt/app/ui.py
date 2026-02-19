@@ -939,7 +939,8 @@ with tabs[4]:
             if strat_opts:
                 chosen = st.selectbox("Strategy", [l for l,_ in strat_opts])
                 key_chosen = next(k for l,k in strat_opts if l == chosen)
-                ret_s = bt.get(key_chosen+"R") or bt[key_chosen].pct_change().dropna()
+                _ret_s = bt.get(key_chosen + "R")
+                ret_s = _ret_s if _ret_s is not None else bt[key_chosen].pct_change().dropna()
 
                 if len(ret_s) >= 30:
                     run_bs = st.toggle("Run bootstrap (slow)",
