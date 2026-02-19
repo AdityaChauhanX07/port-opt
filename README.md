@@ -5,7 +5,6 @@
 [![Live App](https://img.shields.io/badge/Live%20App-Streamlit-FF4B4B?style=flat-square&logo=streamlit)](https://adityachauhanx07-port-opt.streamlit.app/)
 [![Landing Page](https://img.shields.io/badge/Landing%20Page-GitHub%20Pages-0a0a0a?style=flat-square&logo=github)](https://adityachauhanx07.github.io/port-opt/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-c8502a?style=flat-square)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/AdityaChauhanX07/port-opt/ci.yml?style=flat-square&label=CI)](https://github.com/AdityaChauhanX07/port-opt/actions)
 
 ---
 
