@@ -1,98 +1,176 @@
 from __future__ import annotations
+
 import numpy as np
 import pandas as pd
-from scipy.cluster.hierarchy import linkage, dendrogram
+from scipy.cluster.hierarchy import linkage
 from scipy.spatial.distance import squareform
 
 
 def correl_distance(corr: pd.DataFrame) -> np.ndarray:
     """
-    López de Prado distance measure: d_ij = sqrt(0.5 * (1 - corr_ij))
-    Converts correlation matrix to distance matrix.
+    López de Prado distance measure: d_ij = sqrt(0.5 * (1 − corr_ij)).
+
+    Parameters
+    ----------
+    corr : pd.DataFrame
+        Correlation matrix.
+
+    Returns
+    -------
+    np.ndarray
+        Symmetric distance matrix with values in [0, 1].
     """
-    corr = corr.copy()
-    corr = corr.clip(-1, 1)
-    dist = np.sqrt(0.5 * (1 - corr))
-    return dist
+    clipped = corr.values.clip(-1.0, 1.0)
+    return np.sqrt(0.5 * (1.0 - clipped))
 
 
-def hierarchical_clustering(dist: pd.DataFrame) -> np.ndarray:
+def hierarchical_clustering(dist: np.ndarray) -> np.ndarray:
     """
-    Perform hierarchical clustering (linkage) using distance matrix.
-    Returns linkage matrix.
+    Single-linkage hierarchical clustering on a distance matrix.
+
+    Parameters
+    ----------
+    dist : np.ndarray
+        Square symmetric distance matrix.
+
+    Returns
+    -------
+    np.ndarray
+        SciPy linkage matrix (shape ``(n-1, 4)``).
     """
-    # squareform: convert to condensed form
     condensed = squareform(dist, checks=False)
-    Z = linkage(condensed, method="single")
-    return Z
+    return linkage(condensed, method="single")
 
 
-def get_quasi_diag(link: np.ndarray) -> list[int]:
+def _quasi_diag(link: np.ndarray) -> list[int]:
     """
-    Compute the quasi-diagonalization order from the linkage matrix.
-    This returns the order in which assets appear in the hierarchical tree.
-    """
-    link = link.astype(int)
-    num_items = link.shape[0] + 1
-    cluster = [link[-1, 0], link[-1, 1]]  # last merge
+    Recover the leaf order implied by the linkage matrix (quasi-diagonalisation).
 
-    def unpack(node):
-        if node < num_items:
-            return [node]
+    Uses an iterative stack instead of recursion to avoid hitting Python's
+    default recursion limit on large universes.
+
+    Parameters
+    ----------
+    link : np.ndarray
+        SciPy linkage matrix.
+
+    Returns
+    -------
+    list[int]
+        Leaf indices in hierarchical order.
+    """
+    n        = link.shape[0] + 1          # number of original leaves
+    link_int = link[:, :2].astype(int)
+
+    order: list[int] = []
+    stack            = [int(link_int[-1, 0]), int(link_int[-1, 1])]
+
+    while stack:
+        node = stack.pop()
+        if node < n:                       # leaf
+            order.append(node)
         else:
-            idx = node - num_items
-            return unpack(link[idx, 0]) + unpack(link[idx, 1])
+            idx = node - n
+            # push right then left so left is processed first
+            stack.append(int(link_int[idx, 1]))
+            stack.append(int(link_int[idx, 0]))
 
-    return unpack(cluster[0]) + unpack(cluster[1])
+    return order
 
 
-def get_recursive_bisection(cov: pd.DataFrame, sort_ix: list[int]) -> pd.Series:
+def _cluster_var(cov_values: np.ndarray, indices: list[int]) -> float:
+    """Variance of an equal-weight sub-portfolio."""
+    sub = cov_values[np.ix_(indices, indices)]
+    w   = np.ones(len(indices)) / len(indices)
+    return float(w @ sub @ w)
+
+
+def _recursive_bisection(cov_values: np.ndarray, sort_ix: list[int]) -> np.ndarray:
     """
-    Compute HRP weights by recursive bisection.
+    Allocate weights by recursive bisection of the sorted cluster.
+
+    Parameters
+    ----------
+    cov_values : np.ndarray
+        Raw covariance matrix (numpy array, not DataFrame).
+    sort_ix : list[int]
+        Leaf order from :func:`_quasi_diag`.
+
+    Returns
+    -------
+    np.ndarray
+        Weight array aligned to ``sort_ix`` order.
     """
-    weights = pd.Series(1.0, index=sort_ix)
+    weights = np.ones(len(sort_ix))
+    # work with index positions into sort_ix
+    clusters: list[list[int]] = [list(range(len(sort_ix)))]
 
-    def cluster_var(indices: list[int]) -> float:
-        subcov = cov.iloc[indices, indices]
-        w = np.ones(len(indices)) / len(indices)
-        return float(w @ subcov.values @ w)
+    while clusters:
+        cluster = clusters.pop()
+        if len(cluster) < 2:
+            continue
 
-    def split(indices: list[int]):
-        if len(indices) == 1:
-            return
-        split_point = len(indices) // 2
-        left = indices[:split_point]
-        right = indices[split_point:]
+        mid   = len(cluster) // 2
+        left  = cluster[:mid]
+        right = cluster[mid:]
 
-        var_left = cluster_var(left)
-        var_right = cluster_var(right)
-        alpha = 1 - var_left / (var_left + var_right)
+        left_assets  = [sort_ix[i] for i in left]
+        right_assets = [sort_ix[i] for i in right]
 
-        weights[left] *= alpha
-        weights[right] *= 1 - alpha
+        var_l = _cluster_var(cov_values, left_assets)
+        var_r = _cluster_var(cov_values, right_assets)
+        total = var_l + var_r
 
-        split(left)
-        split(right)
+        # guard against degenerate case
+        alpha = 1.0 - (var_l / total) if total > 0 else 0.5
 
-    split(sort_ix)
-    return weights / weights.sum()
+        weights[left]  *= alpha
+        weights[right] *= 1.0 - alpha
+
+        clusters.extend([left, right])
+
+    weights /= weights.sum()
+    return weights
 
 
 def hrp_weights(returns: pd.DataFrame) -> pd.Series:
     """
-    Full HRP pipeline: correlation -> distance -> clustering -> quasi diag -> recursive bisection.
-    Returns HRP weights indexed by asset names.
+    Compute Hierarchical Risk Parity weights.
+
+    Full pipeline:
+    correlation → distance → single-linkage clustering →
+    quasi-diagonalisation → recursive bisection.
+
+    Parameters
+    ----------
+    returns : pd.DataFrame
+        Per-period asset returns, shape (T, N).
+
+    Returns
+    -------
+    pd.Series
+        Portfolio weights indexed by ticker name, summing to 1.
+
+    Raises
+    ------
+    ValueError
+        If fewer than 2 assets are provided.
     """
-    corr = returns.corr()
-    cov = returns.cov()
+    if returns.shape[1] < 2:
+        raise ValueError("HRP requires at least 2 assets.")
 
-    dist = correl_distance(corr)
-    Z = hierarchical_clustering(dist)
-    sort_ix = get_quasi_diag(Z)
-    hrp = get_recursive_bisection(cov, sort_ix)
+    corr       = returns.corr()
+    cov        = returns.cov()
+    assets     = list(returns.columns)
 
-    # map index numbers back to ticker names
-    assets = returns.columns
-    hrp.index = [assets[i] for i in hrp.index]
+    dist       = correl_distance(corr)
+    link       = hierarchical_clustering(dist)
+    sort_ix    = _quasi_diag(link)
+    raw_w      = _recursive_bisection(cov.values, sort_ix)
 
-    return hrp
+    # map position → ticker name
+    named_w = pd.Series(
+        {assets[sort_ix[i]]: raw_w[i] for i in range(len(sort_ix))}
+    )
+    # return in original column order
+    return named_w.reindex(assets)
