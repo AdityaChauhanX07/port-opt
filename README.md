@@ -2,7 +2,7 @@
 
 An interactive web application for quantitative portfolio analysis and optimization, implementing modern mean–variance optimization and backtesting workflows using Streamlit, Plotly, and CVXPY.
 
-**Live App:** [https://adityachauhanx07.github.io/port-opt/](https://adityachauhanx07-port-opt.app)
+**Live App:** [https://adityachauhanx07.github.io/port-opt/]([https://adityachauhanx07-port-opt.app](https://adityachauhanx07.github.io/port-opt/))
 
 ---
 ## Overview
