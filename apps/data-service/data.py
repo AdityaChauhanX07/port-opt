@@ -1,5 +1,8 @@
 """
 Price data fetching and cleaning — ported from portopt/core/data.py.
+
+Handles the new yfinance ≥ 0.2.x API where yf.download() always returns a
+MultiIndex column DataFrame with shape (field, ticker), even for single tickers.
 """
 from __future__ import annotations
 
@@ -26,8 +29,12 @@ def fetch_prices(
 ) -> pd.DataFrame:
     """Download adjusted-close prices from Yahoo Finance.
 
-    Tries a bulk download first; falls back to per-ticker downloads for any
-    ticker that failed in the bulk call.
+    Handles yfinance ≥ 0.2 where ``yf.download`` always returns a MultiIndex
+    DataFrame with ``(field, ticker)`` columns, regardless of how many tickers
+    are requested.
+
+    Falls back to per-ticker downloads for any ticker missing after the bulk
+    call.
 
     Parameters
     ----------
@@ -38,8 +45,8 @@ def fetch_prices(
 
     Returns
     -------
-    pd.DataFrame  — shape (T, n_assets), DatetimeIndex, columns = tickers.
-                    Returns an empty DataFrame when nothing could be fetched.
+    pd.DataFrame — shape (T, n_assets), DatetimeIndex, columns = tickers.
+                   Returns an empty DataFrame when nothing could be fetched.
     """
     yf_interval = _INTERVAL_MAP.get(interval.lower(), "1d")
     start_s, end_s = str(start), str(end)
@@ -60,27 +67,27 @@ def fetch_prices(
 
     out: pd.DataFrame | None = None
 
-    if len(df) > 0:
-        if isinstance(df.columns, pd.MultiIndex) and len(tickers) > 1:
-            closes: dict[str, pd.Series] = {}
-            for t in tickers:
-                try:
-                    sub = df[t]
-                    col = _pick_close_col(sub.columns)
-                    if col:
-                        closes[t] = sub[col]
-                except Exception:
-                    pass
-            if closes:
-                out = pd.DataFrame(closes)
-        elif len(tickers) == 1:
-            col = _pick_close_col(df.columns)
-            if col:
-                s = df[col]
-                out = pd.DataFrame({tickers[0]: s})
+    if len(df) > 0 and isinstance(df.columns, pd.MultiIndex):
+        # New yfinance API: columns are (field, ticker) tuples.
+        # df['Close'] gives a DataFrame keyed by ticker (or Series for 1 ticker).
+        if "Close" in df.columns.get_level_values(0):
+            close = df["Close"]
+        elif "Adj Close" in df.columns.get_level_values(0):
+            close = df["Adj Close"]
+        else:
+            close = None
+
+        if close is not None:
+            if isinstance(close, pd.Series):
+                # Single ticker returned as a Series — restore column name
+                close = close.to_frame(name=tickers[0])
+            # Ensure requested tickers that exist are present
+            available = [t for t in tickers if t in close.columns]
+            if available:
+                out = close[available]
 
     # ------------------------------------------------------------------
-    # Per-ticker fallback for missing tickers
+    # Per-ticker fallback for any tickers still missing
     # ------------------------------------------------------------------
     fetched = set(out.columns.tolist()) if out is not None else set()
     missing = [t for t in tickers if t not in fetched]
@@ -99,11 +106,28 @@ def fetch_prices(
                 )
                 if len(one) == 0:
                     continue
-                col = _pick_close_col(one.columns)
-                if col:
-                    frames.append(one[col].rename(t))
+                # Handle MultiIndex on single-ticker fallback too
+                if isinstance(one.columns, pd.MultiIndex):
+                    level0 = one.columns.get_level_values(0)
+                    if "Close" in level0:
+                        s = one["Close"]
+                    elif "Adj Close" in level0:
+                        s = one["Adj Close"]
+                    else:
+                        continue
+                    if isinstance(s, pd.DataFrame):
+                        s = s.iloc[:, 0]
+                else:
+                    if "Close" in one.columns:
+                        s = one["Close"]
+                    elif "Adj Close" in one.columns:
+                        s = one["Adj Close"]
+                    else:
+                        continue
+                frames.append(s.rename(t))
             except Exception:
                 pass
+
         if frames:
             fallback = pd.concat(frames, axis=1)
             out = fallback if out is None else out.join(fallback, how="outer")
@@ -111,7 +135,7 @@ def fetch_prices(
     if out is None or out.empty:
         return pd.DataFrame()
 
-    # Reorder columns to match original ticker order where possible.
+    # Reorder columns to match original ticker request order.
     ordered = [t for t in tickers if t in out.columns]
     out = out[ordered]
     out.index.name = "Date"
@@ -127,8 +151,7 @@ def align_and_clean(prices: pd.DataFrame) -> pd.DataFrame:
 
     Returns
     -------
-    Cleaned DataFrame.  May have fewer columns than the input if some tickers
-    had no data at all.
+    Cleaned DataFrame.  May have fewer columns if some tickers had no data.
     """
     df = prices.copy()
 
@@ -150,16 +173,3 @@ def align_and_clean(prices: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(how="all")
 
     return df
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _pick_close_col(columns: pd.Index) -> str | None:
-    """Return 'Close' or 'Adj Close' from a column index, or None."""
-    if "Close" in columns:
-        return "Close"
-    if "Adj Close" in columns:
-        return "Adj Close"
-    return None
