@@ -15,3 +15,8 @@ dependencies = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Flat layout — include the routers package and top-level modules.
+packages = ["routers"]
+artifacts = ["*.py"]
