@@ -1,0 +1,24 @@
+# Node
+node_modules/
+.turbo/
+dist/
+.next/
+
+# Rust
+target/
+pkg/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# Misc
+.DS_Store
+*.log

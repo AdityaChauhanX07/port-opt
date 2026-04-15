@@ -1,0 +1,17 @@
+[project]
+name = "data-service"
+version = "0.1.0"
+description = "PortOpt v2 data service — price fetching and factor data"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "yfinance>=0.2.50",
+    "pandas>=2.2.0",
+    "numpy>=2.0.0",
+    "scipy>=1.14.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

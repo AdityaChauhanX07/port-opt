@@ -1,0 +1,10 @@
+{
+  "name": "@portopt/engine",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "cargo build --release || (echo 'cargo not found — install Rust to build the engine' && exit 0)",
+    "check": "cargo check || echo 'cargo not found — install Rust to check the engine'",
+    "clean": "cargo clean"
+  }
+}

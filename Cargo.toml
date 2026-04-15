@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "packages/engine",
+  "packages/engine-wasm",
+]
+resolver = "2"

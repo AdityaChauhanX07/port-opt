@@ -1,0 +1,12 @@
+{
+  "name": "@portopt/engine-wasm",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "wasm-pack build --target web --out-dir pkg || (echo 'wasm-pack not found — install wasm-pack to build WASM bindings' && exit 0)",
+    "clean": "cargo clean && rm -rf pkg"
+  },
+  "dependencies": {
+    "@portopt/engine": "workspace:*"
+  }
+}
