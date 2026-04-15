@@ -8,4 +8,7 @@ nalgebra = "0.33"
 ndarray = "0.16"
 rand = "0.8"
 rand_distr = "0.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.10"
+clarabel = "0.9"
