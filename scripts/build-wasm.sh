@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Build the engine-wasm crate to WebAssembly and bundle it for the web app.
+# Build the engine-wasm crate to WebAssembly and copy it into the web app.
 #
 # Prerequisites:
-#   cargo install wasm-pack      (or: cargo install wasm-bindgen-cli)
+#   cargo install wasm-pack
 #   rustup target add wasm32-unknown-unknown
 #
 # Output:
-#   packages/engine-wasm/pkg/   — wasm-pack output (ESM + .d.ts)
+#   packages/engine-wasm/pkg/              — wasm-pack build output
+#   apps/web/src/lib/wasm/pkg/             — copy consumed by engine.ts
 #
 # Usage:
 #   bash scripts/build-wasm.sh            # release build (default)
@@ -18,6 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CRATE_DIR="$REPO_ROOT/packages/engine-wasm"
 PKG_DIR="$CRATE_DIR/pkg"
+WEB_PKG_DIR="$REPO_ROOT/apps/web/src/lib/wasm/pkg"
 
 echo "==> Building engine-wasm..."
 
@@ -37,4 +39,10 @@ else
   wasm-pack build --release --target web --out-dir "$PKG_DIR"
 fi
 
-echo "==> Done.  Output in: $PKG_DIR"
+echo "==> Copying pkg to web app..."
+rm -rf "$WEB_PKG_DIR"
+cp -r "$PKG_DIR" "$WEB_PKG_DIR"
+
+echo "==> Done."
+echo "    Crate output : $PKG_DIR"
+echo "    Web app pkg  : $WEB_PKG_DIR"
