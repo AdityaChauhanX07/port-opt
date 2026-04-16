@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@portopt/charts": "workspace:*",
     "@portopt/types": "workspace:*",
     "@tanstack/react-query": "^5.62.0",
     "@trpc/client": "^11.0.0",
