@@ -5,6 +5,13 @@ import { immer } from 'zustand/middleware/immer';
 // State shape
 // ---------------------------------------------------------------------------
 
+export interface AlgorithmCacheEntry {
+  weights: Float64Array;
+  vol: number;
+  ret: number;
+  sharpe: number;
+}
+
 export interface FrontierState {
   weights: Float64Array;
   risks: Float64Array;
@@ -45,6 +52,7 @@ export interface PortfolioState {
   activeAlgorithm: 'markowitz' | 'hrp' | 'risk_parity' | 'cvar' | 'robust';
   currentWeights: Float64Array | null;
   isOptimizing: boolean;
+  algorithmCache: Record<string, AlgorithmCacheEntry>;
 
   // ---------- Constraints ----------
   longOnly: boolean;
@@ -80,6 +88,8 @@ export interface PortfolioState {
   setWeights: (w: Float64Array) => void;
   setActiveAlgorithm: (a: PortfolioState['activeAlgorithm']) => void;
   setOptimizing: (b: boolean) => void;
+  setCachedAlgorithm: (name: string, entry: AlgorithmCacheEntry) => void;
+  clearAlgorithmCache: () => void;
   reset: () => void;
 }
 
@@ -153,6 +163,8 @@ const INITIAL: Omit<
   | 'setWeights'
   | 'setActiveAlgorithm'
   | 'setOptimizing'
+  | 'setCachedAlgorithm'
+  | 'clearAlgorithmCache'
   | 'reset'
 > = {
   tickers: [],
@@ -169,6 +181,7 @@ const INITIAL: Omit<
   activeAlgorithm: 'markowitz',
   currentWeights: null,
   isOptimizing: false,
+  algorithmCache: {},
   longOnly: true,
   lb: 0,
   ub: 1,
@@ -246,6 +259,7 @@ export const usePortfolioStore = create<PortfolioState>()(
         // Clear stale optimisation outputs
         state.frontier = null;
         state.currentWeights = null;
+        state.algorithmCache = {};
         state.isLoadingData = false;
       }),
 
@@ -267,6 +281,16 @@ export const usePortfolioStore = create<PortfolioState>()(
     setOptimizing: (b) =>
       set((state) => {
         state.isOptimizing = b;
+      }),
+
+    setCachedAlgorithm: (name, entry) =>
+      set((state) => {
+        state.algorithmCache[name] = entry;
+      }),
+
+    clearAlgorithmCache: () =>
+      set((state) => {
+        state.algorithmCache = {};
       }),
 
     reset: () =>

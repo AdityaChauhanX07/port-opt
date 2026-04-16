@@ -4,13 +4,14 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
-import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { skipToken } from '@tanstack/react-query';
 import { EfficientFrontier, WeightBar } from '@portopt/charts';
-import type { FrontierPoint } from '@portopt/charts';
-import { Button, Card, Input, Select, Slider, Tabs, TabsPrimitive } from '@portopt/ui';
+import type { FrontierPoint, AssetStat, AlgorithmMarker, HoverMetrics } from '@portopt/charts';
+import { Button, Card, Input, Select, Slider, Tabs } from '@portopt/ui';
 import { api } from '../../../lib/trpc/client';
 import { usePortfolioStore } from '../../../lib/stores/portfolio';
 import { useEngine } from '../../../lib/wasm/use-engine';
@@ -23,7 +24,7 @@ import { slideUp, stagger } from '../../../lib/motion';
 const DEFAULT_TICKERS = 'AAPL, MSFT, TLT, GLD, IWM, SPY';
 
 function defaultDateRange() {
-  const end = new Date();
+  const end   = new Date();
   const start = new Date(end);
   start.setFullYear(start.getFullYear() - 5);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
@@ -33,10 +34,23 @@ function defaultDateRange() {
 const PPY: Record<string, number> = { daily: 252, weekly: 52, monthly: 12 };
 
 const FREQUENCY_OPTIONS = [
-  { value: 'daily',   label: 'Daily' },
-  { value: 'weekly',  label: 'Weekly' },
+  { value: 'daily',   label: 'Daily'   },
+  { value: 'weekly',  label: 'Weekly'  },
   { value: 'monthly', label: 'Monthly' },
 ];
+
+const ALGORITHM_TABS = [
+  { value: 'markowitz',   label: 'MVO'    },
+  { value: 'hrp',         label: 'HRP'    },
+  { value: 'risk_parity', label: 'ERC'    },
+  { value: 'cvar',        label: 'CVaR'   },
+  { value: 'robust',      label: 'Robust' },
+];
+
+const OVERLAY_ALGORITHMS = ['hrp', 'risk_parity', 'cvar', 'robust'] as const;
+type OverlayAlgorithm = typeof OVERLAY_ALGORITHMS[number];
+
+const containerVariants = stagger(0.06);
 
 // ---------------------------------------------------------------------------
 // Math helpers
@@ -71,7 +85,7 @@ function portfolioStats(
   returns: Float64Array,
   nPeriods: number,
   nAssets: number,
-  weights: number[],
+  weights: number[] | Float64Array,
   rf: number,
   ppy: number,
 ) {
@@ -79,19 +93,43 @@ function portfolioStats(
   for (let t = 0; t < nPeriods; t++) {
     let r = 0;
     for (let a = 0; a < nAssets; a++) r += weights[a] * returns[t * nAssets + a];
-    sumR += r;
+    sumR  += r;
     sumR2 += r * r;
   }
-  const mean = sumR / nPeriods;
+  const mean     = sumR / nPeriods;
   const variance = (sumR2 - nPeriods * mean * mean) / Math.max(nPeriods - 1, 1);
-  const vol = Math.sqrt(Math.max(variance, 0) * ppy);
-  const ret = mean * ppy;
-  const sharpe = vol > 0 ? (ret - rf) / vol : 0;
+  const vol      = Math.sqrt(Math.max(variance, 0) * ppy);
+  const ret      = mean * ppy;
+  const sharpe   = vol > 0 ? (ret - rf) / vol : 0;
   return { ret, vol, sharpe };
 }
 
+function computeAssetStats(
+  returns: Float64Array,
+  nPeriods: number,
+  nAssets: number,
+  tickers: string[],
+  ppy: number,
+): AssetStat[] {
+  return tickers.map((ticker, a) => {
+    let sum = 0, sum2 = 0;
+    for (let t = 0; t < nPeriods; t++) {
+      const v = returns[t * nAssets + a];
+      sum  += v;
+      sum2 += v * v;
+    }
+    const mean = sum / nPeriods;
+    const variance = (sum2 - nPeriods * mean * mean) / Math.max(nPeriods - 1, 1);
+    return {
+      ticker,
+      vol: Math.sqrt(Math.max(variance, 0) * ppy),
+      ret: mean * ppy,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
-// MetricCard
+// MetricCard — cross-fade on value change (no counting up)
 // ---------------------------------------------------------------------------
 
 function MetricCard({
@@ -105,24 +143,24 @@ function MetricCard({
   format: (v: number) => string;
   colorClass?: string;
 }) {
-  const mv = useMotionValue(0);
-  const spring = useSpring(mv, { stiffness: 60, damping: 18 });
-  const display = useTransform(spring, (v) => (value === null ? '—' : format(v)));
-
-  useEffect(() => {
-    if (value !== null) mv.set(value);
-  }, [value, mv]);
-
+  const displayed = value !== null ? format(value) : '—';
   return (
     <div className="flex-1 min-w-0">
       <p className="mb-1 text-[11px] uppercase tracking-[0.06em] text-tertiary">
         {label}
       </p>
-      <motion.p
-        className={`mono text-[26px] font-semibold leading-none ${colorClass}`}
-      >
-        {display}
-      </motion.p>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.p
+          key={displayed}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.12 }}
+          className={`mono text-[26px] font-semibold leading-none ${colorClass}`}
+        >
+          {displayed}
+        </motion.p>
+      </AnimatePresence>
     </div>
   );
 }
@@ -133,23 +171,13 @@ function MetricCard({
 
 type Algorithm = 'markowitz' | 'hrp' | 'risk_parity' | 'cvar' | 'robust';
 
-const ALGORITHM_TABS = [
-  { value: 'markowitz',   label: 'MVO' },
-  { value: 'hrp',         label: 'HRP' },
-  { value: 'risk_parity', label: 'ERC' },
-  { value: 'cvar',        label: 'CVaR' },
-  { value: 'robust',      label: 'Robust' },
-];
-
-const containerVariants = stagger(0.06);
-
 export default function OptimizePage() {
-  // ── Local form state ─────────────────────────────────────────────────────
+  // ── Local form state ────────────────────────────────────────────────────
   const defaultRange = useMemo(defaultDateRange, []);
-  const [tickerText, setTickerText]   = useState(DEFAULT_TICKERS);
-  const [startDate,  setStartDate]    = useState(defaultRange.start);
-  const [endDate,    setEndDate]      = useState(defaultRange.end);
-  const [frequency,  setFrequency]    = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [tickerText, setTickerText] = useState(DEFAULT_TICKERS);
+  const [startDate,  setStartDate]  = useState(defaultRange.start);
+  const [endDate,    setEndDate]    = useState(defaultRange.end);
+  const [frequency,  setFrequency]  = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
   // ── Zustand store ────────────────────────────────────────────────────────
   const store   = usePortfolioStore();
@@ -167,14 +195,24 @@ export default function OptimizePage() {
     rf,
     shrinkageAlpha,
     nPoints,
+    algorithmCache,
   } = store;
 
-  const [algorithm, setAlgorithm]  = useState<Algorithm>('markowitz');
-  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
-  const [optError, setOptError]     = useState<string | null>(null);
-  const [wasmMissing, setWasmMissing] = useState(false);
+  const [algorithm,    setAlgorithm]    = useState<Algorithm>('markowitz');
+  const [selectedIdx,  setSelectedIdx]  = useState<number | null>(null);
+  const [optError,     setOptError]     = useState<string | null>(null);
+  const [wasmMissing,  setWasmMissing]  = useState(false);
 
-  // Sync selectedIdx to bestIdx when frontier updates
+  // ── Hover state (drives weights + metrics display) ───────────────────────
+  const [hoveredIdx,     setHoveredIdx]     = useState<number | null>(null);
+  const [hoveredWeights, setHoveredWeights] = useState<Float64Array | null>(null);
+  const [hoveredMetrics, setHoveredMetrics] = useState<HoverMetrics | null>(null);
+
+  // ── Algorithm overlay toggles ────────────────────────────────────────────
+  const [visibleAlgorithms, setVisibleAlgorithms] = useState<Set<string>>(new Set());
+  const runningRef = useRef<Set<string>>(new Set());
+
+  // ── Sync selectedIdx to bestIdx on new frontier ──────────────────────────
   useEffect(() => {
     if (frontier?.bestIdx != null) setSelectedIdx(frontier.bestIdx);
     else if (frontier === null)    setSelectedIdx(null);
@@ -204,6 +242,7 @@ export default function OptimizePage() {
       nAssets:  pricesData.n_assets,
     });
     store.setTickers(pricesData.tickers);
+    setVisibleAlgorithms(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pricesData]);
 
@@ -212,7 +251,7 @@ export default function OptimizePage() {
   const ppy    = PPY[frequency] ?? 252;
   const hasData = nPeriods > 0 && !!returns;
 
-  // ── Derived values ────────────────────────────────────────────────────────
+  // ── Derived chart points ──────────────────────────────────────────────────
   const chartPoints = useMemo<FrontierPoint[]>(() => {
     if (frontier && frontier.nPoints > 0 && nAssets > 0) {
       return Array.from({ length: frontier.nPoints }, (_, i) => ({
@@ -230,31 +269,44 @@ export default function OptimizePage() {
     return [];
   }, [frontier, currentWeights, returns, nPeriods, nAssets, rf, ppy]);
 
+  // ── Per-asset scatter stats ───────────────────────────────────────────────
+  const assetStats = useMemo<AssetStat[]>(() => {
+    if (!returns || nPeriods === 0 || storeTickers.length === 0) return [];
+    return computeAssetStats(returns, nPeriods, nAssets, storeTickers, ppy);
+  }, [returns, nPeriods, nAssets, storeTickers, ppy]);
+
+  // ── Algorithm overlay markers ─────────────────────────────────────────────
+  const algorithmMarkers = useMemo<AlgorithmMarker[]>(() => {
+    return OVERLAY_ALGORITHMS
+      .filter((name) => algorithmCache[name])
+      .map((name) => {
+        const e = algorithmCache[name]!;
+        return { algorithm: name as AlgorithmMarker['algorithm'], vol: e.vol, ret: e.ret, sharpe: e.sharpe };
+      });
+  }, [algorithmCache]);
+
+  // ── Display weights & metrics (hover > locked > bestIdx) ─────────────────
   const displayWeights = useMemo<number[] | null>(() => {
+    if (hoveredWeights) return Array.from(hoveredWeights);
     if (frontier && selectedIdx != null) {
-      return Array.from(
-        frontier.weights.slice(selectedIdx * nAssets, (selectedIdx + 1) * nAssets)
-      );
+      return Array.from(frontier.weights.slice(selectedIdx * nAssets, (selectedIdx + 1) * nAssets));
     }
     if (currentWeights) return Array.from(currentWeights);
     return null;
-  }, [frontier, selectedIdx, nAssets, currentWeights]);
+  }, [hoveredWeights, frontier, selectedIdx, nAssets, currentWeights]);
 
   const metrics = useMemo(() => {
+    if (hoveredMetrics) return hoveredMetrics;
     if (frontier && selectedIdx != null && selectedIdx < frontier.nPoints) {
-      return {
-        ret:    frontier.returns[selectedIdx],
-        vol:    frontier.risks[selectedIdx],
-        sharpe: frontier.sharpes[selectedIdx],
-      };
+      return { ret: frontier.returns[selectedIdx], vol: frontier.risks[selectedIdx], sharpe: frontier.sharpes[selectedIdx] };
     }
     if (chartPoints.length === 1) {
       return { ret: chartPoints[0].return, vol: chartPoints[0].risk, sharpe: chartPoints[0].sharpe };
     }
     return null;
-  }, [frontier, selectedIdx, chartPoints]);
+  }, [hoveredMetrics, frontier, selectedIdx, chartPoints]);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
+  // ── Handlers ────────────────────────────────────────────────────────────
   function handleLoadData() {
     const tickers = tickerText
       .split(',')
@@ -265,12 +317,75 @@ export default function OptimizePage() {
     setQueryInput({ tickers, start: startDate, end: endDate, interval: frequency });
   }
 
-  const handlePointClick = useCallback(
-    (point: FrontierPoint, idx: number) => {
-      setSelectedIdx(idx);
-      store.setWeights(new Float64Array(point.weights));
+  const handlePointHover = useCallback(
+    (index: number | null, weights: Float64Array | null, hMetrics: HoverMetrics | null) => {
+      setHoveredIdx(index);
+      setHoveredWeights(weights);
+      setHoveredMetrics(hMetrics);
     },
-    [store],
+    [],
+  );
+
+  const handlePointSelect = useCallback(
+    (index: number | null) => {
+      setSelectedIdx(index);
+      if (index != null && frontier) {
+        store.setWeights(frontier.weights.slice(index * nAssets, (index + 1) * nAssets));
+      }
+    },
+    [frontier, nAssets, store],
+  );
+
+  const handleToggleAlgorithm = useCallback(
+    async (name: string) => {
+      const next = new Set(visibleAlgorithms);
+      if (next.has(name)) {
+        next.delete(name);
+        setVisibleAlgorithms(next);
+        return;
+      }
+      next.add(name);
+      setVisibleAlgorithms(next);
+
+      // Run solver if result not already cached and not already running
+      if (algorithmCache[name] || runningRef.current.has(name)) return;
+      if (!returns || !hasData) return;
+      runningRef.current.add(name);
+
+      try {
+        let weights: Float64Array | null = null;
+        switch (name as OverlayAlgorithm) {
+          case 'hrp': {
+            weights = await engine.solveHrp(returns, nPeriods, nAssets, storeTickers);
+            break;
+          }
+          case 'risk_parity': {
+            const cov = computeCovariance(returns, nPeriods, nAssets);
+            weights   = await engine.solveRiskParity(cov, nAssets, lb, ub);
+            break;
+          }
+          case 'cvar': {
+            weights = await engine.solveCvar(returns, nPeriods, nAssets, 0.95, longOnly, lb, ub);
+            break;
+          }
+          case 'robust': {
+            weights = await engine.solveRobust(returns, nPeriods, nAssets, 1.0, longOnly, lb, ub, ppy);
+            break;
+          }
+        }
+        if (weights) {
+          const stats = portfolioStats(returns, nPeriods, nAssets, weights, rf, ppy);
+          store.setCachedAlgorithm(name, { weights, vol: stats.vol, ret: stats.ret, sharpe: stats.sharpe });
+        }
+      } catch {
+        // Silently ignore (WASM not available for cvar/robust in browser)
+        next.delete(name);
+        setVisibleAlgorithms(new Set(next));
+      } finally {
+        runningRef.current.delete(name);
+      }
+    },
+    [visibleAlgorithms, algorithmCache, returns, hasData, nPeriods, nAssets, storeTickers, lb, ub, longOnly, rf, ppy, engine, store],
   );
 
   async function handleOptimize() {
@@ -328,7 +443,7 @@ export default function OptimizePage() {
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
     <motion.div
       className="flex h-full flex-col"
@@ -336,7 +451,7 @@ export default function OptimizePage() {
       animate="animate"
       variants={containerVariants}
     >
-      {/* ── Controls bar ───────────────────────────────────────────────── */}
+      {/* Controls bar */}
       <motion.div
         variants={slideUp}
         className="flex flex-wrap items-center gap-2 px-8 py-4 hairline-b"
@@ -348,7 +463,6 @@ export default function OptimizePage() {
           className="min-w-[220px] flex-1"
           onKeyDown={(e) => e.key === 'Enter' && handleLoadData()}
         />
-
         <Input
           type="date"
           value={startDate}
@@ -364,14 +478,12 @@ export default function OptimizePage() {
           className="w-[138px]"
           variant="mono"
         />
-
         <Select
           value={frequency}
           onValueChange={(v) => setFrequency(v as typeof frequency)}
           options={FREQUENCY_OPTIONS}
           className="w-[110px]"
         />
-
         <Button
           variant="primary"
           size="md"
@@ -380,7 +492,6 @@ export default function OptimizePage() {
         >
           {isFetchingPrices ? 'Loading' : 'Load Data'}
         </Button>
-
         {hasData && !isFetchingPrices && (
           <span className="mono text-[11px] text-muted">
             {nAssets}A · {nPeriods}T
@@ -393,15 +504,14 @@ export default function OptimizePage() {
         )}
       </motion.div>
 
-      {/* ── Body ───────────────────────────────────────────────────────── */}
+      {/* Body */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* ── Left panel ─────────────────────────────────────────────── */}
+        {/* Left panel */}
         <motion.aside
           variants={slideUp}
           className="flex w-[240px] shrink-0 flex-col overflow-y-auto hairline-r"
           style={{ background: 'var(--bg)' }}
         >
-          {/* Algorithm tabs */}
           <div className="px-0">
             <Tabs
               tabs={ALGORITHM_TABS}
@@ -410,11 +520,9 @@ export default function OptimizePage() {
             />
           </div>
 
-          {/* Constraints */}
           <div className="flex flex-col gap-5 p-5 flex-1">
             <SectionLabel>Constraints</SectionLabel>
 
-            {/* Long only */}
             <div className="flex items-center justify-between">
               <span className="text-[12px] text-secondary">Long only</span>
               <Toggle
@@ -432,7 +540,6 @@ export default function OptimizePage() {
               format={(v) => `${(v * 100).toFixed(0)}%`}
               onChange={(v) => store.setConstraints({ lb: v })}
             />
-
             <Slider
               label="Upper bound"
               value={ub}
@@ -487,7 +594,6 @@ export default function OptimizePage() {
             )}
           </div>
 
-          {/* Optimize button */}
           <div className="p-5 hairline-t">
             <Button
               variant="primary"
@@ -507,12 +613,11 @@ export default function OptimizePage() {
           </div>
         </motion.aside>
 
-        {/* ── Main area ──────────────────────────────────────────────── */}
+        {/* Main area */}
         <motion.div
           variants={slideUp}
           className="flex flex-1 flex-col gap-6 overflow-y-auto p-8"
         >
-          {/* Banners */}
           <AnimatePresence>
             {wasmMissing && (
               <motion.div
@@ -547,14 +652,15 @@ export default function OptimizePage() {
 
           {/* Efficient Frontier chart */}
           <motion.div variants={slideUp}>
-            <Card padding="md" className="min-h-[360px] flex flex-col">
-              <div className="mb-4 flex items-center justify-between">
+            <Card padding="md" className="flex flex-col">
+              <div className="mb-3 flex items-center justify-between">
                 <span className="text-[13px] font-medium text-primary">
                   Efficient Frontier
                 </span>
                 {frontier ? (
                   <span className="mono text-[11px] text-muted">
-                    {frontier.nPoints} portfolios · click to select
+                    {frontier.nPoints} portfolios
+                    {hoveredIdx != null ? ` · pt ${hoveredIdx + 1}` : ' · hover to explore'}
                   </span>
                 ) : currentWeights ? (
                   <span className="mono text-[11px] text-muted">
@@ -562,13 +668,19 @@ export default function OptimizePage() {
                   </span>
                 ) : null}
               </div>
-              <div className="flex-1 min-h-[280px]">
+              <div className="min-h-[320px]">
                 <EfficientFrontier
                   points={chartPoints}
                   bestIdx={frontier ? (frontier.bestIdx ?? undefined) : undefined}
                   tickers={storeTickers}
+                  rf={rf}
+                  assetStats={assetStats.length > 0 ? assetStats : undefined}
+                  algorithmMarkers={algorithmMarkers}
+                  visibleAlgorithms={visibleAlgorithms}
                   selectedIdx={selectedIdx}
-                  onPointClick={handlePointClick}
+                  onPointHover={handlePointHover}
+                  onPointSelect={handlePointSelect}
+                  onToggleAlgorithm={hasData ? handleToggleAlgorithm : undefined}
                 />
               </div>
             </Card>
@@ -580,6 +692,9 @@ export default function OptimizePage() {
               <Card padding="md">
                 <p className="mb-4 text-[11px] uppercase tracking-[0.06em] text-tertiary">
                   Weight Allocation
+                  {hoveredIdx != null && (
+                    <span className="ml-2 normal-case text-muted">— hovering</span>
+                  )}
                 </p>
                 {displayWeights && storeTickers.length > 0 ? (
                   <WeightBar weights={displayWeights} tickers={storeTickers} />
@@ -630,7 +745,7 @@ export default function OptimizePage() {
 }
 
 // ---------------------------------------------------------------------------
-// Small local helpers
+// Local helpers
 // ---------------------------------------------------------------------------
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -641,13 +756,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Toggle({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: () => void;
-}) {
+function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
     <button
       type="button"

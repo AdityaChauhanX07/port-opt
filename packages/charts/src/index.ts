@@ -1,7 +1,7 @@
 // D3-based chart components — frontier chart, equity curve, fan chart, etc.
 
 export { EfficientFrontier } from './EfficientFrontier';
-export type { EfficientFrontierProps, FrontierPoint } from './EfficientFrontier';
+export type { EfficientFrontierProps, FrontierPoint, AssetStat, AlgorithmMarker, HoverMetrics } from './EfficientFrontier';
 
 export { WeightBar } from './WeightBar';
 export type { WeightBarProps } from './WeightBar';

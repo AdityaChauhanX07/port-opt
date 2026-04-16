@@ -20,6 +20,8 @@
   --accent: #5e8eff;
   --accent-hover: #7aa0ff;
   --accent-subtle: rgba(94, 142, 255, 0.1);
+  --accent-2: #8b5cf6;
+  --accent-3: #f59e0b;
 
   /* Semantic (financial) */
   --gain: #3fb950;
