@@ -14,3 +14,12 @@ export type { DrawdownChartProps, DrawdownSeries } from './DrawdownChart';
 
 export { WeightEvolution } from './WeightEvolution';
 export type { WeightEvolutionProps } from './WeightEvolution';
+
+export { SankeyFlow } from './SankeyFlow';
+export type { SankeyFlowProps } from './SankeyFlow';
+
+export { Histogram } from './Histogram';
+export type { HistogramProps, HistogramMarker } from './Histogram';
+
+export { GroupedBarChart } from './GroupedBarChart';
+export type { GroupedBarChartProps, BarGroup, GroupedBar } from './GroupedBarChart';
