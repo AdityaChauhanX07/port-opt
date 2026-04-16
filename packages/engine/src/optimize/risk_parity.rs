@@ -58,28 +58,68 @@ pub fn solve(cov: &DMatrix<f64>, lb: f64, ub: f64) -> Result<DVector<f64>, Engin
     let mut w = DVector::from_element(n, init);
     project_onto_feasible(&mut w, eff_lb, ub);
 
-    const MAX_ITER: usize = 5_000;
-    const TOL: f64 = 1e-12;
+    // Scale covariance so the average diagonal entry ≈ 1.
+    // ERC is scale-invariant: if Σ → αΣ, the ERC weights are unchanged.
+    // This avoids the gradient-scale issue when cov is at per-period scale (~1e-6).
+    let diag_mean: f64 = (0..n).map(|i| cov[(i, i)]).sum::<f64>() / n_f;
+    let cov_scale = diag_mean.max(1e-30);
+    let cov_s = cov / cov_scale;
 
-    let mut step = 1e-2;
+    // Phase 1 — Multiplicative ERC fixed-point iteration (scale-invariant, fast).
+    //
+    // ERC condition:  w_i · (Σw)_i = constant  ∀i
+    // Rearranging:    w_i ∝ 1 / (Σw)_i  at the fixed point.
+    // Update:         w_i^{k+1} = sqrt(w_i^k / (Σw^k)_i)  (Roncalli 2013)
+    // Normalise to sum=1 after each step; apply box constraints via re-projection.
+    const MAX_ITER: usize = 2_000;
+    const TOL: f64 = 1e-10;
 
     for _ in 0..MAX_ITER {
-        let (f0, grad) = objective_and_grad(cov, &w);
+        let cw: DVector<f64> = &cov_s * &w;
+
+        // Multiplicative update: scale-invariant square-root fixed point.
+        let mut w_new = DVector::from_fn(n, |i, _| {
+            if cw[i] > 1e-30 {
+                (w[i] / cw[i]).sqrt()
+            } else {
+                w[i]
+            }
+        });
+
+        // Normalise.
+        let s: f64 = w_new.sum();
+        if s < 1e-30 {
+            break;
+        }
+        w_new /= s;
+
+        // Re-project onto box × simplex constraints.
+        project_onto_feasible(&mut w_new, eff_lb, ub);
+
+        let diff: f64 = (&w_new - &w).amax();
+        w = w_new;
+        if diff < TOL {
+            break;
+        }
+    }
+
+    // Phase 2 — Projected-gradient refinement (handles active box constraints).
+    // Only needed when the multiplicative phase stagnates near a bound.
+    let mut step = 1e-2;
+    for _ in 0..2_000 {
+        let (f0, grad) = objective_and_grad(&cov_s, &w);
         if f0 < TOL {
             break;
         }
-
-        // Backtracking: try to step in the negative gradient direction.
         let mut alpha = step;
         let mut improved = false;
-
         for _ in 0..40 {
             let mut w_new = &w - alpha * &grad;
             project_onto_feasible(&mut w_new, eff_lb, ub);
-            let (f1, _) = objective_and_grad(cov, &w_new);
+            let (f1, _) = objective_and_grad(&cov_s, &w_new);
             if f1 < f0 {
                 w = w_new;
-                step = alpha * 1.05; // grow slightly on success
+                step = alpha * 1.05;
                 improved = true;
                 break;
             }
@@ -88,7 +128,6 @@ pub fn solve(cov: &DMatrix<f64>, lb: f64, ub: f64) -> Result<DVector<f64>, Engin
                 break;
             }
         }
-
         if !improved {
             break;
         }

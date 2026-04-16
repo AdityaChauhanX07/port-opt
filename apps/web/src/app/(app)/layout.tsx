@@ -1,7 +1,103 @@
-export default function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return <div className="app-shell min-h-screen">{children}</div>;
+'use client';
+
+import React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+const NAV_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/optimize',  label: 'Optimize' },
+  { href: '/backtest',  label: 'Backtest' },
+  { href: '/risk',      label: 'Risk' },
+  { href: '/research',  label: 'Research' },
+] as const;
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-bg text-primary">
+      {/* ── Top bar ───────────────────────────────────────────────────────── */}
+      <header
+        className="flex h-12 shrink-0 items-center justify-between px-4 hairline-b"
+        style={{ background: 'var(--bg)' }}
+      >
+        {/* Left: wordmark + env tag */}
+        <div className="flex items-center gap-3">
+          <span className="text-[14px] font-medium tracking-tight text-primary select-none">
+            PortOpt
+          </span>
+          <span className="mono text-[10px] uppercase tracking-widest text-muted">
+            Beta
+          </span>
+        </div>
+
+        {/* Right: settings placeholder */}
+        <button
+          className="flex h-7 w-7 items-center justify-center rounded text-tertiary hover:text-primary hover:bg-[var(--bg-hover)] transition-colors duration-[var(--duration-fast)] focus:outline-none"
+          aria-label="Settings"
+          title="Settings"
+        >
+          <SettingsIcon size={15} />
+        </button>
+      </header>
+
+      {/* ── Body: sidenav + content ────────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0">
+        {/* Side nav */}
+        <SideNav />
+
+        {/* Page content */}
+        <main className="flex-1 overflow-auto">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function SideNav() {
+  const pathname = usePathname();
+
+  return (
+    <nav
+      className="flex w-[200px] shrink-0 flex-col overflow-y-auto hairline-r py-2"
+      style={{ background: 'var(--bg)' }}
+    >
+      {NAV_ITEMS.map(({ href, label }) => {
+        const active = pathname === href || pathname.startsWith(href + '/');
+        return (
+          <Link
+            key={href}
+            href={href}
+            className={[
+              'relative flex h-8 items-center px-3 text-[13px]',
+              'transition-colors duration-[var(--duration-fast)]',
+              active
+                ? 'text-primary before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-r before:bg-accent'
+                : 'text-secondary hover:text-primary hover:bg-[var(--bg-hover)]',
+            ].join(' ')}
+          >
+            {label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function SettingsIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
 }

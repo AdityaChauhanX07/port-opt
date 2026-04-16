@@ -1,0 +1,65 @@
+:root {
+  /* Surfaces */
+  --bg: #0a0a0a;
+  --bg-elevated: #111111;
+  --bg-hover: #161616;
+  --bg-subtle: #1a1a1a;
+
+  /* Borders */
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --border-focus: rgba(94, 142, 255, 0.5);
+
+  /* Text */
+  --text-primary: #f5f5f5;
+  --text-secondary: #a3a3a3;
+  --text-tertiary: #737373;
+  --text-muted: #525252;
+
+  /* Accent — muted blue, used sparingly */
+  --accent: #5e8eff;
+  --accent-hover: #7aa0ff;
+  --accent-subtle: rgba(94, 142, 255, 0.1);
+
+  /* Semantic (financial) */
+  --gain: #3fb950;
+  --gain-subtle: rgba(63, 185, 80, 0.1);
+  --loss: #f85149;
+  --loss-subtle: rgba(248, 81, 73, 0.1);
+  --neutral: #8b949e;
+
+  /* Motion */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration: 180ms;
+  --duration-slow: 240ms;
+
+  /* Type scale */
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --text-3xl: 34px;
+  --text-display: 48px;
+
+  /* Spacing (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* Radii — minimal */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+}

@@ -1,1 +1,10 @@
-// Shared UI component library — add React components here
+export { Button } from './primitives/Button';
+export { Card } from './primitives/Card';
+export { DataTable } from './primitives/DataTable';
+export type { Column } from './primitives/DataTable';
+export { Dialog } from './primitives/Dialog';
+export { Input } from './primitives/Input';
+export { Select } from './primitives/Select';
+export { Slider } from './primitives/Slider';
+export { Tabs, TabsPrimitive } from './primitives/Tabs';
+export { Tooltip, TooltipProvider } from './primitives/Tooltip';

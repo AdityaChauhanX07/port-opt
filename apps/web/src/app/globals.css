@@ -1,3 +1,1 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Superseded by src/styles/globals.css — kept as empty stub so legacy imports resolve */

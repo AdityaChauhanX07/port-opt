@@ -4,16 +4,17 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { skipToken } from '@tanstack/react-query';
 import { EfficientFrontier, WeightBar } from '@portopt/charts';
 import type { FrontierPoint } from '@portopt/charts';
+import { Button, Card, Input, Select, Slider, Tabs, TabsPrimitive } from '@portopt/ui';
 import { api } from '../../../lib/trpc/client';
 import { usePortfolioStore } from '../../../lib/stores/portfolio';
 import { useEngine } from '../../../lib/wasm/use-engine';
+import { slideUp, stagger } from '../../../lib/motion';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -30,6 +31,12 @@ function defaultDateRange() {
 }
 
 const PPY: Record<string, number> = { daily: 252, weekly: 52, monthly: 12 };
+
+const FREQUENCY_OPTIONS = [
+  { value: 'daily',   label: 'Daily' },
+  { value: 'weekly',  label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
 
 // ---------------------------------------------------------------------------
 // Math helpers
@@ -68,8 +75,7 @@ function portfolioStats(
   rf: number,
   ppy: number,
 ) {
-  let sumR = 0,
-    sumR2 = 0;
+  let sumR = 0, sumR2 = 0;
   for (let t = 0; t < nPeriods; t++) {
     let r = 0;
     for (let a = 0; a < nAssets; a++) r += weights[a] * returns[t * nAssets + a];
@@ -85,20 +91,19 @@ function portfolioStats(
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// MetricCard
 // ---------------------------------------------------------------------------
 
-/** Animated count-up metric card. */
 function MetricCard({
   label,
   value,
   format,
-  color = '#e5e5e5',
+  colorClass = 'text-primary',
 }: {
   label: string;
   value: number | null;
   format: (v: number) => string;
-  color?: string;
+  colorClass?: string;
 }) {
   const mv = useMotionValue(0);
   const spring = useSpring(mv, { stiffness: 60, damping: 18 });
@@ -109,59 +114,15 @@ function MetricCard({
   }, [value, mv]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex-1 rounded-xl border border-[#1e1e1e] bg-[#141414] p-4"
-    >
-      <p className="mb-1 text-xs font-medium uppercase tracking-widest text-[#555]">
+    <div className="flex-1 min-w-0">
+      <p className="mb-1 text-[11px] uppercase tracking-[0.06em] text-tertiary">
         {label}
       </p>
       <motion.p
-        className="text-2xl font-semibold tabular-nums"
-        style={{ color }}
+        className={`mono text-[26px] font-semibold leading-none ${colorClass}`}
       >
         {display}
       </motion.p>
-    </motion.div>
-  );
-}
-
-/** Labelled slider control. */
-function SliderField({
-  label,
-  value,
-  min,
-  max,
-  step,
-  format,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  format?: (v: number) => string;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs">
-        <span className="text-[#777]">{label}</span>
-        <span className="font-medium text-[#e5e5e5]">
-          {format ? format(value) : value}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full accent-[#2f81f7]"
-      />
     </div>
   );
 }
@@ -172,23 +133,15 @@ function SliderField({
 
 type Algorithm = 'markowitz' | 'hrp' | 'risk_parity' | 'cvar' | 'robust';
 
-const ALGORITHMS: { id: Algorithm; label: string }[] = [
-  { id: 'markowitz',   label: 'Markowitz MVO' },
-  { id: 'hrp',         label: 'HRP' },
-  { id: 'risk_parity', label: 'Risk Parity (ERC)' },
-  { id: 'cvar',        label: 'Min-CVaR' },
-  { id: 'robust',      label: 'Robust MVO' },
+const ALGORITHM_TABS = [
+  { value: 'markowitz',   label: 'MVO' },
+  { value: 'hrp',         label: 'HRP' },
+  { value: 'risk_parity', label: 'ERC' },
+  { value: 'cvar',        label: 'CVaR' },
+  { value: 'robust',      label: 'Robust' },
 ];
 
-const stagger = {
-  container: {
-    animate: { transition: { staggerChildren: 0.08 } },
-  },
-  item: {
-    initial: { opacity: 0, y: 16 },
-    animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
-  },
-};
+const containerVariants = stagger(0.06);
 
 export default function OptimizePage() {
   // ── Local form state ─────────────────────────────────────────────────────
@@ -216,20 +169,16 @@ export default function OptimizePage() {
     nPoints,
   } = store;
 
-  // ── Selected algorithm (local — mirrors store) ───────────────────────────
-  const [algorithm, setAlgorithm] = useState<Algorithm>('markowitz');
-
-  // ── Selected frontier point ──────────────────────────────────────────────
+  const [algorithm, setAlgorithm]  = useState<Algorithm>('markowitz');
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [optError, setOptError]     = useState<string | null>(null);
+  const [wasmMissing, setWasmMissing] = useState(false);
 
   // Sync selectedIdx to bestIdx when frontier updates
   useEffect(() => {
     if (frontier?.bestIdx != null) setSelectedIdx(frontier.bestIdx);
     else if (frontier === null)    setSelectedIdx(null);
   }, [frontier]);
-
-  // ── Optimization error ───────────────────────────────────────────────────
-  const [optError, setOptError] = useState<string | null>(null);
 
   // ── tRPC lazy query ──────────────────────────────────────────────────────
   type QueryInput = {
@@ -241,12 +190,11 @@ export default function OptimizePage() {
   const [queryInput, setQueryInput] = useState<QueryInput | null>(null);
 
   const {
-    data:      pricesData,
+    data:       pricesData,
     isFetching: isFetchingPrices,
     error:      fetchError,
   } = api.data.fetchPrices.useQuery(queryInput ?? skipToken);
 
-  // When new price data arrives, push it into the store
   useEffect(() => {
     if (!pricesData) return;
     store.setPriceData({
@@ -261,13 +209,10 @@ export default function OptimizePage() {
 
   // ── WASM engine ──────────────────────────────────────────────────────────
   const engine = useEngine();
-  const [wasmMissing, setWasmMissing] = useState(false);
-
-  // ── Derived values ───────────────────────────────────────────────────────
-  const ppy = PPY[frequency] ?? 252;
+  const ppy    = PPY[frequency] ?? 252;
   const hasData = nPeriods > 0 && !!returns;
 
-  /** Convert flat frontier arrays to FrontierPoint[]. */
+  // ── Derived values ────────────────────────────────────────────────────────
   const chartPoints = useMemo<FrontierPoint[]>(() => {
     if (frontier && frontier.nPoints > 0 && nAssets > 0) {
       return Array.from({ length: frontier.nPoints }, (_, i) => ({
@@ -285,7 +230,6 @@ export default function OptimizePage() {
     return [];
   }, [frontier, currentWeights, returns, nPeriods, nAssets, rf, ppy]);
 
-  /** Active display weights (selected frontier point or single optimisation). */
   const displayWeights = useMemo<number[] | null>(() => {
     if (frontier && selectedIdx != null) {
       return Array.from(
@@ -296,7 +240,6 @@ export default function OptimizePage() {
     return null;
   }, [frontier, selectedIdx, nAssets, currentWeights]);
 
-  /** Metrics for the currently selected point. */
   const metrics = useMemo(() => {
     if (frontier && selectedIdx != null && selectedIdx < frontier.nPoints) {
       return {
@@ -311,8 +254,7 @@ export default function OptimizePage() {
     return null;
   }, [frontier, selectedIdx, chartPoints]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
-
+  // ── Handlers ──────────────────────────────────────────────────────────────
   function handleLoadData() {
     const tickers = tickerText
       .split(',')
@@ -341,25 +283,10 @@ export default function OptimizePage() {
     try {
       switch (algorithm) {
         case 'markowitz': {
-          const result = await engine.solveFrontier({
-            returns,
-            nPeriods,
-            nAssets,
-            nPts:     nPoints,
-            longOnly,
-            lb,
-            ub,
-            rf,
-            ppy,
-          });
+          const result = await engine.solveFrontier({ returns, nPeriods, nAssets, nPts: nPoints, longOnly, lb, ub, rf, ppy });
           store.setFrontier(result);
           if (result.bestIdx != null) {
-            store.setWeights(
-              result.weights.slice(
-                result.bestIdx * nAssets,
-                (result.bestIdx + 1) * nAssets,
-              ),
-            );
+            store.setWeights(result.weights.slice(result.bestIdx * nAssets, (result.bestIdx + 1) * nAssets));
           }
           break;
         }
@@ -377,17 +304,13 @@ export default function OptimizePage() {
           break;
         }
         case 'cvar': {
-          const w = await engine.solveCvar(
-            returns, nPeriods, nAssets, 0.95, longOnly, lb, ub,
-          );
+          const w = await engine.solveCvar(returns, nPeriods, nAssets, 0.95, longOnly, lb, ub);
           store.setWeights(w);
           store.setFrontier(null);
           break;
         }
         case 'robust': {
-          const w = await engine.solveRobust(
-            returns, nPeriods, nAssets, 1.0, longOnly, lb, ub, ppy,
-          );
+          const w = await engine.solveRobust(returns, nPeriods, nAssets, 1.0, longOnly, lb, ub, ppy);
           store.setWeights(w);
           store.setFrontier(null);
           break;
@@ -406,366 +329,343 @@ export default function OptimizePage() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-
   return (
     <motion.div
-      className="flex h-screen flex-col overflow-hidden bg-[#0a0a0a] text-[#e5e5e5]"
+      className="flex h-full flex-col"
       initial="initial"
       animate="animate"
-      variants={stagger.container}
+      variants={containerVariants}
     >
-      {/* ── TOP BAR ─────────────────────────────────────────────────────── */}
+      {/* ── Controls bar ───────────────────────────────────────────────── */}
       <motion.div
-        variants={stagger.item}
-        className="flex flex-wrap items-center gap-3 border-b border-[#1e1e1e] bg-[#0d0d0d] px-4 py-3"
+        variants={slideUp}
+        className="flex flex-wrap items-center gap-2 px-8 py-4 hairline-b"
       >
-        {/* Ticker input */}
-        <input
-          type="text"
+        <Input
           value={tickerText}
           onChange={(e) => setTickerText(e.target.value)}
-          placeholder="AAPL, MSFT, TLT, ..."
-          className="min-w-[240px] flex-1 rounded-lg border border-[#1e1e1e] bg-[#141414] px-3 py-2 text-sm text-[#e5e5e5] placeholder-[#444] outline-none focus:border-[#2f81f7] transition-colors"
+          placeholder="AAPL, MSFT, TLT, …"
+          className="min-w-[220px] flex-1"
+          onKeyDown={(e) => e.key === 'Enter' && handleLoadData()}
         />
 
-        {/* Start date */}
-        <input
+        <Input
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          className="rounded-lg border border-[#1e1e1e] bg-[#141414] px-3 py-2 text-sm text-[#e5e5e5] outline-none focus:border-[#2f81f7] transition-colors"
+          className="w-[138px]"
+          variant="mono"
         />
-        <span className="text-[#444] text-xs">→</span>
-        <input
+        <span className="text-[11px] text-muted">–</span>
+        <Input
           type="date"
           value={endDate}
           onChange={(e) => setEndDate(e.target.value)}
-          className="rounded-lg border border-[#1e1e1e] bg-[#141414] px-3 py-2 text-sm text-[#e5e5e5] outline-none focus:border-[#2f81f7] transition-colors"
+          className="w-[138px]"
+          variant="mono"
         />
 
-        {/* Frequency */}
-        <select
+        <Select
           value={frequency}
-          onChange={(e) => setFrequency(e.target.value as typeof frequency)}
-          className="rounded-lg border border-[#1e1e1e] bg-[#141414] px-3 py-2 text-sm text-[#e5e5e5] outline-none focus:border-[#2f81f7] transition-colors"
-        >
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-        </select>
+          onValueChange={(v) => setFrequency(v as typeof frequency)}
+          options={FREQUENCY_OPTIONS}
+          className="w-[110px]"
+        />
 
-        {/* Load Data */}
-        <button
+        <Button
+          variant="primary"
+          size="md"
+          loading={isFetchingPrices}
           onClick={handleLoadData}
-          disabled={isFetchingPrices}
-          className="flex items-center gap-2 rounded-lg bg-[#2f81f7] px-4 py-2 text-sm font-medium text-white transition-all hover:bg-[#4d94f8] disabled:opacity-50"
         >
-          {isFetchingPrices ? (
-            <>
-              <LoadingSpinner size={14} />
-              Loading…
-            </>
-          ) : (
-            'Load Data'
-          )}
-        </button>
+          {isFetchingPrices ? 'Loading' : 'Load Data'}
+        </Button>
 
-        {/* Status badges */}
         {hasData && !isFetchingPrices && (
-          <span className="text-xs text-[#555]">
-            {nAssets} assets · {nPeriods} periods
+          <span className="mono text-[11px] text-muted">
+            {nAssets}A · {nPeriods}T
           </span>
         )}
         {fetchError && (
-          <span className="text-xs text-[#ef4444]">
+          <span className="text-[12px] text-loss">
             {fetchError.message ?? String(fetchError)}
           </span>
         )}
       </motion.div>
 
-      {/* ── BODY ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* ── LEFT PANEL ──────────────────────────────────────────────── */}
+      {/* ── Body ───────────────────────────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* ── Left panel ─────────────────────────────────────────────── */}
         <motion.aside
-          variants={stagger.item}
-          className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto border-r border-[#1e1e1e] bg-[#0d0d0d] p-4"
+          variants={slideUp}
+          className="flex w-[240px] shrink-0 flex-col overflow-y-auto hairline-r"
+          style={{ background: 'var(--bg)' }}
         >
-          {/* Algorithm selector */}
-          <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-[#555]">
-              Algorithm
-            </h3>
-            <div className="space-y-1.5">
-              {ALGORITHMS.map(({ id, label }) => (
-                <label
-                  key={id}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-[#141414]"
-                >
-                  <input
-                    type="radio"
-                    name="algorithm"
-                    value={id}
-                    checked={algorithm === id}
-                    onChange={() => setAlgorithm(id)}
-                    className="accent-[#2f81f7]"
-                  />
-                  <span className="text-sm text-[#ccc]">{label}</span>
-                </label>
-              ))}
-            </div>
-          </section>
+          {/* Algorithm tabs */}
+          <div className="px-0">
+            <Tabs
+              tabs={ALGORITHM_TABS}
+              value={algorithm}
+              onValueChange={(v) => setAlgorithm(v as Algorithm)}
+            />
+          </div>
 
           {/* Constraints */}
-          <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-[#555]">
-              Constraints
-            </h3>
-            <div className="space-y-4">
-              {/* Long only toggle */}
-              <label className="flex cursor-pointer items-center justify-between">
-                <span className="text-xs text-[#777]">Long only</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={longOnly}
-                  onClick={() => store.setConstraints({ longOnly: !longOnly })}
-                  className={`relative h-5 w-9 rounded-full transition-colors ${
-                    longOnly ? 'bg-[#2f81f7]' : 'bg-[#333]'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                      longOnly ? 'translate-x-[18px]' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-              </label>
+          <div className="flex flex-col gap-5 p-5 flex-1">
+            <SectionLabel>Constraints</SectionLabel>
 
-              <SliderField
-                label="Lower bound"
-                value={lb}
-                min={0} max={0.5} step={0.01}
-                format={(v) => `${(v * 100).toFixed(0)}%`}
-                onChange={(v) => store.setConstraints({ lb: v })}
+            {/* Long only */}
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] text-secondary">Long only</span>
+              <Toggle
+                checked={longOnly}
+                onChange={() => store.setConstraints({ longOnly: !longOnly })}
               />
-
-              <SliderField
-                label="Upper bound"
-                value={ub}
-                min={0.1} max={1.0} step={0.01}
-                format={(v) => `${(v * 100).toFixed(0)}%`}
-                onChange={(v) => store.setConstraints({ ub: v })}
-              />
-
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="text-[#777]">Risk-free rate</span>
-                  <span className="font-medium text-[#e5e5e5]">
-                    {(rf * 100).toFixed(2)}%
-                  </span>
-                </div>
-                <input
-                  type="number"
-                  min={0} max={0.2} step={0.001}
-                  value={rf}
-                  onChange={(e) =>
-                    store.setConstraints({ rf: parseFloat(e.target.value) || 0 })
-                  }
-                  className="w-full rounded-md border border-[#1e1e1e] bg-[#141414] px-2 py-1.5 text-xs text-[#e5e5e5] outline-none focus:border-[#2f81f7]"
-                />
-              </div>
-
-              <SliderField
-                label="Shrinkage α"
-                value={shrinkageAlpha}
-                min={0} max={1} step={0.05}
-                format={(v) => v.toFixed(2)}
-                onChange={(v) => store.setConstraints({ shrinkageAlpha: v })}
-              />
-
-              {algorithm === 'markowitz' && (
-                <SliderField
-                  label="Frontier points"
-                  value={nPoints}
-                  min={10} max={100} step={5}
-                  onChange={(v) => store.setConstraints({ nPoints: v })}
-                />
-              )}
             </div>
-          </section>
+
+            <Slider
+              label="Lower bound"
+              value={lb}
+              min={0}
+              max={0.5}
+              step={0.01}
+              format={(v) => `${(v * 100).toFixed(0)}%`}
+              onChange={(v) => store.setConstraints({ lb: v })}
+            />
+
+            <Slider
+              label="Upper bound"
+              value={ub}
+              min={0.1}
+              max={1.0}
+              step={0.01}
+              format={(v) => `${(v * 100).toFixed(0)}%`}
+              onChange={(v) => store.setConstraints({ ub: v })}
+            />
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-tertiary">Risk-free rate</span>
+                <span className="mono text-[12px] text-primary">
+                  {(rf * 100).toFixed(2)}%
+                </span>
+              </div>
+              <Input
+                type="number"
+                variant="mono"
+                min={0}
+                max={0.2}
+                step={0.001}
+                value={rf}
+                onChange={(e) =>
+                  store.setConstraints({ rf: parseFloat(e.target.value) || 0 })
+                }
+                className="h-7 text-[12px]"
+              />
+            </div>
+
+            <Slider
+              label="Shrinkage α"
+              value={shrinkageAlpha}
+              min={0}
+              max={1}
+              step={0.05}
+              format={(v) => v.toFixed(2)}
+              onChange={(v) => store.setConstraints({ shrinkageAlpha: v })}
+            />
+
+            {algorithm === 'markowitz' && (
+              <Slider
+                label="Frontier points"
+                value={nPoints}
+                min={10}
+                max={100}
+                step={5}
+                format={(v) => String(Math.round(v))}
+                onChange={(v) => store.setConstraints({ nPoints: v })}
+              />
+            )}
+          </div>
 
           {/* Optimize button */}
-          <div className="mt-auto">
-            <button
+          <div className="p-5 hairline-t">
+            <Button
+              variant="primary"
+              size="lg"
+              loading={isOptimizing}
+              disabled={!hasData}
               onClick={handleOptimize}
-              disabled={!hasData || isOptimizing}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2f81f7] py-2.5 text-sm font-semibold text-white transition-all hover:bg-[#4d94f8] disabled:opacity-40"
+              className="w-full"
             >
-              {isOptimizing ? (
-                <>
-                  <LoadingSpinner size={14} />
-                  Computing…
-                </>
-              ) : (
-                'Optimize'
-              )}
-            </button>
-
+              {isOptimizing ? 'Computing' : 'Optimize'}
+            </Button>
             {!hasData && (
-              <p className="mt-2 text-center text-xs text-[#555]">
+              <p className="mt-2 text-center text-[11px] text-muted">
                 Load data first
               </p>
             )}
           </div>
         </motion.aside>
 
-        {/* ── MAIN AREA ────────────────────────────────────────────────── */}
-        <motion.main
-          variants={stagger.item}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto p-4"
+        {/* ── Main area ──────────────────────────────────────────────── */}
+        <motion.div
+          variants={slideUp}
+          className="flex flex-1 flex-col gap-6 overflow-y-auto p-8"
         >
-          {/* WASM missing banner */}
+          {/* Banners */}
           <AnimatePresence>
             {wasmMissing && (
               <motion.div
-                initial={{ opacity: 0, y: -8 }}
+                key="wasm-banner"
+                initial={{ opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                className="rounded-lg border border-[#f59e0b]/30 bg-[#f59e0b]/10 px-4 py-3 text-sm text-[#f59e0b]"
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18 }}
+                className="rounded border border-[rgba(248,177,73,0.25)] bg-[rgba(248,177,73,0.07)] px-4 py-3 text-[13px] text-[#f8b149]"
               >
-                <span className="font-semibold">WASM engine not built.</span>{' '}
+                <span className="font-medium">WASM engine not built.</span>{' '}
                 Run{' '}
-                <code className="rounded bg-[#1a1a1a] px-1.5 py-0.5 font-mono text-xs">
-                  pnpm run build:wasm
-                </code>{' '}
-                or{' '}
-                <code className="rounded bg-[#1a1a1a] px-1.5 py-0.5 font-mono text-xs">
+                <code className="mono rounded bg-subtle px-1.5 py-0.5 text-[11px]">
                   bash scripts/build-wasm.sh
                 </code>{' '}
                 from the repo root, then reload.
               </motion.div>
             )}
-          </AnimatePresence>
-
-          {/* Optimization error */}
-          <AnimatePresence>
             {optError && (
               <motion.div
-                initial={{ opacity: 0, y: -8 }}
+                key="opt-error"
+                initial={{ opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                className="rounded-lg border border-[#ef4444]/30 bg-[#ef4444]/10 px-4 py-3 text-sm text-[#ef4444]"
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18 }}
+                className="rounded border border-[rgba(248,81,73,0.25)] bg-loss-subtle px-4 py-3 text-[13px] text-loss"
               >
-                <span className="font-semibold">Optimisation failed:</span> {optError}
+                <span className="font-medium">Optimisation failed:</span> {optError}
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* Efficient Frontier chart */}
-          <div className="flex-1 rounded-xl border border-[#1e1e1e] bg-[#141414] p-4 min-h-[360px]">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[#e5e5e5]">
-                Efficient Frontier
-              </h2>
-              {frontier && (
-                <span className="text-xs text-[#555]">
-                  {frontier.nPoints} portfolios · click to select
+          <motion.div variants={slideUp}>
+            <Card padding="md" className="min-h-[360px] flex flex-col">
+              <div className="mb-4 flex items-center justify-between">
+                <span className="text-[13px] font-medium text-primary">
+                  Efficient Frontier
                 </span>
-              )}
-              {!frontier && currentWeights && (
-                <span className="text-xs text-[#555]">
-                  {ALGORITHMS.find((a) => a.id === algorithm)?.label}
-                </span>
-              )}
-            </div>
-            <div className="h-[calc(100%-32px)]">
-              <EfficientFrontier
-                points={chartPoints}
-                bestIdx={frontier ? (frontier.bestIdx ?? undefined) : undefined}
-                tickers={storeTickers}
-                selectedIdx={selectedIdx}
-                onPointClick={handlePointClick}
-              />
-            </div>
-          </div>
-
-          {/* Weights + Metrics row */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {/* Weight allocation */}
-            <div className="rounded-xl border border-[#1e1e1e] bg-[#141414] p-4">
-              <h2 className="mb-4 text-sm font-semibold text-[#e5e5e5]">
-                Weight Allocation
-              </h2>
-              {displayWeights && storeTickers.length > 0 ? (
-                <WeightBar
-                  weights={displayWeights}
+                {frontier ? (
+                  <span className="mono text-[11px] text-muted">
+                    {frontier.nPoints} portfolios · click to select
+                  </span>
+                ) : currentWeights ? (
+                  <span className="mono text-[11px] text-muted">
+                    {ALGORITHM_TABS.find((a) => a.value === algorithm)?.label}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex-1 min-h-[280px]">
+                <EfficientFrontier
+                  points={chartPoints}
+                  bestIdx={frontier ? (frontier.bestIdx ?? undefined) : undefined}
                   tickers={storeTickers}
-                />
-              ) : (
-                <p className="text-sm text-[#555]">
-                  {hasData ? 'Run optimisation to see weights' : 'Load data first'}
-                </p>
-              )}
-            </div>
-
-            {/* Metrics */}
-            <div className="rounded-xl border border-[#1e1e1e] bg-[#141414] p-4">
-              <h2 className="mb-4 text-sm font-semibold text-[#e5e5e5]">
-                Portfolio Metrics
-              </h2>
-              <div className="flex gap-3">
-                <MetricCard
-                  label="Ann. Return"
-                  value={metrics?.ret ?? null}
-                  format={(v) => `${(v * 100).toFixed(2)}%`}
-                  color="#22c55e"
-                />
-                <MetricCard
-                  label="Ann. Volatility"
-                  value={metrics?.vol ?? null}
-                  format={(v) => `${(v * 100).toFixed(2)}%`}
-                  color="#e5e5e5"
-                />
-                <MetricCard
-                  label="Sharpe Ratio"
-                  value={metrics?.sharpe ?? null}
-                  format={(v) => v.toFixed(3)}
-                  color="#2f81f7"
+                  selectedIdx={selectedIdx}
+                  onPointClick={handlePointClick}
                 />
               </div>
-            </div>
+            </Card>
+          </motion.div>
+
+          {/* Weights + Metrics */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <motion.div variants={slideUp}>
+              <Card padding="md">
+                <p className="mb-4 text-[11px] uppercase tracking-[0.06em] text-tertiary">
+                  Weight Allocation
+                </p>
+                {displayWeights && storeTickers.length > 0 ? (
+                  <WeightBar weights={displayWeights} tickers={storeTickers} />
+                ) : (
+                  <p className="text-[13px] text-muted">
+                    {hasData ? 'Run optimisation to see weights' : 'Load data first'}
+                  </p>
+                )}
+              </Card>
+            </motion.div>
+
+            <motion.div variants={slideUp}>
+              <Card padding="md">
+                <p className="mb-5 text-[11px] uppercase tracking-[0.06em] text-tertiary">
+                  Portfolio Metrics
+                </p>
+                <div className="flex gap-6 divide-x divide-[var(--border)]">
+                  <MetricCard
+                    label="Return"
+                    value={metrics?.ret ?? null}
+                    format={(v) => `${(v * 100).toFixed(2)}%`}
+                    colorClass="text-gain"
+                  />
+                  <div className="flex-1 min-w-0 pl-6">
+                    <MetricCard
+                      label="Volatility"
+                      value={metrics?.vol ?? null}
+                      format={(v) => `${(v * 100).toFixed(2)}%`}
+                      colorClass="text-primary"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0 pl-6">
+                    <MetricCard
+                      label="Sharpe"
+                      value={metrics?.sharpe ?? null}
+                      format={(v) => v.toFixed(3)}
+                      colorClass="text-accent"
+                    />
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
           </div>
-        </motion.main>
+        </motion.div>
       </div>
     </motion.div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Micro helpers
+// Small local helpers
 // ---------------------------------------------------------------------------
 
-function LoadingSpinner({ size = 16 }: { size?: number }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      className="animate-spin"
+    <p className="text-[10px] uppercase tracking-[0.08em] text-muted">
+      {children}
+    </p>
+  );
+}
+
+function Toggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      className={[
+        'relative h-5 w-9 rounded-full transition-colors duration-[var(--duration)]',
+        checked ? 'bg-accent' : 'bg-subtle border border-[var(--border-strong)]',
+      ].join(' ')}
     >
-      <circle
-        cx="12" cy="12" r="10"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeOpacity="0.25"
+      <span
+        className={[
+          'absolute top-0.5 h-4 w-4 rounded-full bg-white',
+          'shadow-sm transition-transform duration-[var(--duration)]',
+          checked ? 'translate-x-[18px]' : 'translate-x-0.5',
+        ].join(' ')}
       />
-      <path
-        d="M12 2a10 10 0 0 1 10 10"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-    </svg>
+    </button>
   );
 }

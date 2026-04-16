@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { publicProcedure, router } from '../trpc';
 
-const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL ?? 'http://localhost:8000';
+const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL ?? 'http://localhost:8888';
 
 // ---------------------------------------------------------------------------
 // Shared response shapes (mirrors Python PricesResponse)
