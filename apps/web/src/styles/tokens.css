@@ -29,6 +29,7 @@
   --loss: #f85149;
   --loss-subtle: rgba(248, 81, 73, 0.1);
   --neutral: #8b949e;
+  --warn: #f59e0b;
 
   /* Motion */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);

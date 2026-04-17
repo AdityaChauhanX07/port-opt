@@ -30,6 +30,7 @@ const config: Config = {
         loss: 'var(--loss)',
         'loss-subtle': 'var(--loss-subtle)',
         neutral: 'var(--neutral)',
+        warn: 'var(--warn)',
       },
       fontFamily: {
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],

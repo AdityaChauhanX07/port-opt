@@ -23,3 +23,12 @@ export type { HistogramProps, HistogramMarker } from './Histogram';
 
 export { GroupedBarChart } from './GroupedBarChart';
 export type { GroupedBarChartProps, BarGroup, GroupedBar } from './GroupedBarChart';
+
+export { MonteCarloFan } from './MonteCarloFan';
+export type { MonteCarloFanProps } from './MonteCarloFan';
+
+export { CorrelationMatrix } from './CorrelationMatrix';
+export type { CorrelationMatrixProps } from './CorrelationMatrix';
+
+export { TimeSeriesLine } from './TimeSeriesLine';
+export type { TimeSeriesLineProps, TimeSeriesLineSeries, TimeSeriesRefLine } from './TimeSeriesLine';
