@@ -9,8 +9,18 @@
     "typecheck": "tsc --noEmit",
     "dev": "tsc --watch --noEmit"
   },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "three": ">=0.160.0",
+    "@react-three/fiber": ">=8.0.0",
+    "@react-three/drei": ">=9.0.0"
+  },
   "devDependencies": {
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
     "@types/react": "^18.3.18",
+    "@types/three": "^0.171.0",
+    "three": "^0.184.0",
     "typescript": "^5.7.2"
   }
 }

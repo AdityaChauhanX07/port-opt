@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Button, Card, Input, Slider } from '@portopt/ui';
+import { Button, Card, Input, Slider, Tabs } from '@portopt/ui';
 import {
   MonteCarloFan,
   CorrelationMatrix,
@@ -13,6 +14,12 @@ import {
 import { usePortfolioStore } from '@/lib/stores/portfolio';
 import { useRiskStore } from '@/lib/stores/risk';
 import { useEngine } from '@/lib/wasm/use-engine';
+
+// Three.js globe — client-only, no SSR
+const CorrelationGlobe = dynamic(
+  () => import('@portopt/three').then((m) => m.CorrelationGlobe),
+  { ssr: false, loading: () => <div style={{ height: 600 }} className="flex items-center justify-center"><p className="mono text-[13px] text-tertiary">Loading…</p></div> },
+);
 import { slideUp, stagger } from '@/lib/motion';
 
 // ---------------------------------------------------------------------------
@@ -304,6 +311,7 @@ export default function RiskPage() {
   const [mcSeed,        setMcSeed]        = useState(42);
   const [rollingWindow, setRollingWindow] = useState(126);
   const [rollingHover,  setRollingHover]  = useState<number | null>(null);
+  const [corrView,      setCorrView]      = useState<'2d' | '3d'>('2d');
 
   // ── Prerequisites ──────────────────────────────────────────────────────────
   const hasData    = returns !== null && nPeriods > 1 && nAssets > 0;
@@ -685,7 +693,23 @@ export default function RiskPage() {
 
       {/* ── SECTION 3: Correlation matrix ───────────────────────────────── */}
       <motion.section variants={slideUp}>
-        <SectionHeader label="Correlation Matrix" />
+        {/* Section header + view toggle on the same row */}
+        <div className="flex items-center gap-3 mb-5">
+          <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.06em] text-tertiary">
+            Correlation Matrix
+          </p>
+          <div className="flex-1 h-px bg-[var(--border)]" />
+          {corrMatrix && (
+            <Tabs
+              tabs={[
+                { value: '2d', label: '2D Heatmap' },
+                { value: '3d', label: '3D Globe'   },
+              ]}
+              value={corrView}
+              onValueChange={(v) => setCorrView(v as '2d' | '3d')}
+            />
+          )}
+        </div>
 
         {isCorrLoading && (
           <p className="text-[13px] text-tertiary">Computing correlation…</p>
@@ -693,14 +717,41 @@ export default function RiskPage() {
         {corrError && (
           <p className="text-[13px] text-loss">{corrError}</p>
         )}
+
         {corrMatrix && !isCorrLoading && (
-          <CorrelationMatrix
-            matrix={corrMatrix}
-            tickers={tickers}
-            returns={returns}
-            nAssets={nAssets}
-          />
+          <AnimatePresence mode="wait" initial={false}>
+            {corrView === '2d' ? (
+              <motion.div
+                key="heatmap"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+              >
+                <CorrelationMatrix
+                  matrix={corrMatrix}
+                  tickers={tickers}
+                  returns={returns}
+                  nAssets={nAssets}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="globe"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+              >
+                <CorrelationGlobe
+                  correlations={corrMatrix}
+                  tickers={tickers}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         )}
+
         {!corrMatrix && !isCorrLoading && !corrError && (
           <p className="text-[13px] text-tertiary">Correlation matrix will load automatically.</p>
         )}

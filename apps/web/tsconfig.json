@@ -24,6 +24,9 @@
       "@portopt/charts": [
         "../../packages/charts/src/index.ts"
       ],
+      "@portopt/three": [
+        "../../packages/three/src/index.ts"
+      ],
       "@portopt/ui": [
         "../../packages/ui/src/index.ts"
       ]
