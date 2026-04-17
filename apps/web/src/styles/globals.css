@@ -54,6 +54,38 @@ body {
   border-right: 1px solid var(--border);
 }
 
+/* ── Focus ring ──────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  transition: outline-offset 0.1s ease;
+}
+
+/* ── Skeleton loading ────────────────────────────────────────────────── */
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1;   }
+}
+
+.skeleton {
+  background: var(--bg-hover);
+  border-radius: 4px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* ── No scrollbar ────────────────────────────────────────────────────── */
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Scrollbar ────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {

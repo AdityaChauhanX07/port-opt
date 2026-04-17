@@ -187,6 +187,54 @@ async def get_prices(body: PricesRequest) -> PricesResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# Market snapshot
+# ---------------------------------------------------------------------------
+
+_SNAPSHOT_TICKERS = ["SPY", "QQQ", "DIA", "IWM", "TLT", "GLD", "DBC", "^VIX"]
+
+
+class SnapshotItem(BaseModel):
+    ticker: str
+    price: float
+    change_pct: float
+    sparkline: list[float]
+
+
+@router.get("/market-snapshot", response_model=list[SnapshotItem])
+async def market_snapshot() -> list[SnapshotItem]:
+    """Return last-price, 1-day change, and 30-day sparkline for major tickers."""
+    from datetime import datetime, timedelta
+
+    end_date = datetime.today().strftime("%Y-%m-%d")
+    start_date = (datetime.today() - timedelta(days=40)).strftime("%Y-%m-%d")
+
+    results: list[SnapshotItem] = []
+    for ticker in _SNAPSHOT_TICKERS:
+        try:
+            raw = fetch_prices([ticker], start_date, end_date, "daily")
+            if raw.empty:
+                continue
+            col = raw.columns[0]
+            prices_series = raw[col].dropna()
+            if len(prices_series) < 2:
+                continue
+            price_list = prices_series.tolist()
+            price = float(price_list[-1])
+            change_pct = (price_list[-1] / price_list[-2] - 1.0) * 100.0
+            sparkline = [round(float(p), 4) for p in price_list[-30:]]
+            results.append(SnapshotItem(
+                ticker=ticker.lstrip("^"),
+                price=round(price, 4),
+                change_pct=round(change_pct, 4),
+                sparkline=sparkline,
+            ))
+        except Exception:
+            logger.exception("market_snapshot: failed for %s", ticker)
+
+    return results
+
+
 @router.get("/tickers/search", response_model=list[TickerResult])
 async def search_tickers(
     q: str = Query(..., min_length=1, description="Ticker symbol or company name query"),

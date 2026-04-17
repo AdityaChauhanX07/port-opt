@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -13,42 +14,62 @@ const NAV_ITEMS = [
 ] as const;
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-bg text-primary">
-      {/* ── Top bar ───────────────────────────────────────────────────────── */}
-      <header
-        className="flex h-12 shrink-0 items-center justify-between px-4 hairline-b"
-        style={{ background: 'var(--bg)' }}
-      >
-        {/* Left: wordmark + env tag */}
-        <div className="flex items-center gap-3">
-          <span className="text-[14px] font-medium tracking-tight text-primary select-none">
-            PortOpt
-          </span>
-          <span className="mono text-[10px] uppercase tracking-widest text-muted">
-            Beta
-          </span>
+      {/* Responsive guard — app requires ≥ 1024px */}
+      <div className="flex h-screen items-center justify-center bg-bg lg:hidden">
+        <div className="max-w-xs text-center px-6">
+          <p className="text-[15px] font-medium text-primary mb-2">Screen too narrow</p>
+          <p className="text-[13px] text-muted">PortOpt requires a screen width of at least 1024 px. Please use a larger display or zoom out.</p>
         </div>
+      </div>
 
-        {/* Right: settings placeholder */}
-        <button
-          className="flex h-7 w-7 items-center justify-center rounded text-tertiary hover:text-primary hover:bg-[var(--bg-hover)] transition-colors duration-[var(--duration-fast)] focus:outline-none"
-          aria-label="Settings"
-          title="Settings"
+      {/* App shell — hidden on small screens */}
+      <div className="hidden lg:flex h-full flex-col overflow-hidden">
+        {/* ── Top bar ─────────────────────────────────────────────────── */}
+        <header
+          className="flex h-12 shrink-0 items-center justify-between px-4 hairline-b"
+          style={{ background: 'var(--bg)' }}
         >
-          <SettingsIcon size={15} />
-        </button>
-      </header>
+          <div className="flex items-center gap-3">
+            <span className="text-[14px] font-medium tracking-tight text-primary select-none">
+              PortOpt
+            </span>
+            <span className="mono text-[10px] uppercase tracking-widest text-muted">
+              Beta
+            </span>
+          </div>
 
-      {/* ── Body: sidenav + content ────────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0">
-        {/* Side nav */}
-        <SideNav />
+          <button
+            className="flex h-7 w-7 items-center justify-center rounded text-tertiary hover:text-primary hover:bg-[var(--bg-hover)] transition-colors duration-[var(--duration-fast)] focus:outline-none"
+            aria-label="Settings"
+            title="Settings"
+          >
+            <SettingsIcon size={15} />
+          </button>
+        </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-auto">
-          {children}
-        </main>
+        {/* ── Body: sidenav + content ──────────────────────────────── */}
+        <div className="flex flex-1 min-h-0">
+          <SideNav />
+
+          <main className="flex-1 overflow-auto" id="main-content" tabIndex={-1}>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={pathname}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="h-full"
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
       </div>
     </div>
   );
@@ -61,6 +82,7 @@ function SideNav() {
     <nav
       className="flex w-[200px] shrink-0 flex-col overflow-y-auto hairline-r py-2"
       style={{ background: 'var(--bg)' }}
+      aria-label="Main navigation"
     >
       {NAV_ITEMS.map(({ href, label }) => {
         const active = pathname === href || pathname.startsWith(href + '/');

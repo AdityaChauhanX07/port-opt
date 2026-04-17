@@ -20,6 +20,13 @@ const TickerResult = z.object({
   name: z.string(),
 });
 
+const SnapshotItem = z.object({
+  ticker: z.string(),
+  price: z.number(),
+  change_pct: z.number(),
+  sparkline: z.array(z.number()),
+});
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -69,4 +76,16 @@ export const dataRouter = router({
 
       return z.array(TickerResult).parse(await res.json());
     }),
+
+  marketSnapshot: publicProcedure.query(async () => {
+    const res = await fetch(`${DATA_SERVICE_URL}/market-snapshot`, {
+      next: { revalidate: 300 }, // 5-min server-side cache
+    });
+
+    if (!res.ok) {
+      throw new Error(`Market snapshot failed: ${res.statusText}`);
+    }
+
+    return z.array(SnapshotItem).parse(await res.json());
+  }),
 });
