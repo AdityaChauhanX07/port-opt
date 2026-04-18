@@ -194,7 +194,7 @@ function Edges({ positions, correlations, n, hoveredNode }: EdgesProps) {
   }, [hoveredNode, pairs, colors, alphas]);
 
   return (
-    <lineSegments ref={linesRef} geometry={geometry}>
+    <lineSegments ref={linesRef as any} geometry={geometry as any}>
       <lineBasicMaterial vertexColors transparent opacity={1} />
     </lineSegments>
   );
@@ -240,15 +240,15 @@ function Node({ position, ticker, index, hovered, onHover }: NodeProps) {
   return (
     <group position={position.toArray()}>
       <mesh
-        ref={meshRef}
+        ref={meshRef as any}
         onPointerEnter={(e) => { e.stopPropagation(); onHover(index); }}
         onPointerLeave={(e) => { e.stopPropagation(); onHover(null);  }}
       >
         <sphereGeometry args={[NODE_R, 16, 12]} />
         <meshStandardMaterial
-          ref={matRef}
-          color={COL_NODE}
-          emissive={COL_EMISSIVE}
+          ref={matRef as any}
+          color={COL_NODE as any}
+          emissive={COL_EMISSIVE as any}
           emissiveIntensity={0.2}
           roughness={0.4}
           metalness={0.1}
@@ -317,7 +317,7 @@ function Scene({ positions, tickers, correlations, n, onNodeHover }: SceneProps)
         onEnd={()   => { autoRotate.current = true;  }}
       />
 
-      <group ref={groupRef}>
+      <group ref={groupRef as any}>
         <Edges
           positions={positions}
           correlations={correlations}

@@ -1,0 +1,6 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "cd ../.. && pnpm turbo run build --filter=@portopt/web",
+  "outputDirectory": ".next",
+  "installCommand": "cd ../.. && pnpm install"
+}

@@ -19,8 +19,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'PortOpt',
-  description: 'Quantitative portfolio optimization',
+  title: 'PortOpt — Quantitative Portfolio Intelligence',
+  description:
+    'Build, test, and analyse institutional-quality portfolios — powered by a Rust optimization engine and live market data.',
 };
 
 export default function RootLayout({

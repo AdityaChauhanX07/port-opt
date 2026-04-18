@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: portopt-data
+    runtime: docker
+    dockerfilePath: apps/data-service/Dockerfile
+    dockerContext: apps/data-service
+    envVars:
+      - key: FRONTEND_URL
+        value: https://your-vercel-domain.vercel.app
+      - key: PORT
+        value: "8888"
+    healthCheckPath: /health
+    plan: free
