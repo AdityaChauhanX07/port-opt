@@ -10,7 +10,9 @@ import {
   CorrelationMatrix,
   TimeSeriesLine,
   GroupedBarChart,
+  RegimeTimeline,
 } from '@portopt/charts';
+import type { RegimeResult } from '@/lib/wasm/types';
 import { usePortfolioStore } from '@/lib/stores/portfolio';
 import { useRiskStore } from '@/lib/stores/risk';
 import { useEngine } from '@/lib/wasm/use-engine';
@@ -304,6 +306,12 @@ export default function RiskPage() {
   const [rollingHover,  setRollingHover]  = useState<number | null>(null);
   const [corrView,      setCorrView]      = useState<'2d' | '3d'>('2d');
 
+  // Regime detection
+  const [regimeResult,    setRegimeResult]    = useState<RegimeResult | null>(null);
+  const [isRegimeRunning, setIsRegimeRunning] = useState(false);
+  const [regimeError,     setRegimeError]     = useState<string | null>(null);
+  const [nRegimes,        setNRegimes]        = useState(2);
+
   // ── Prerequisites ──────────────────────────────────────────────────────────
   const hasData    = returns !== null && nPeriods > 1 && nAssets > 0;
   const hasWeights = currentWeights !== null;
@@ -466,6 +474,22 @@ export default function RiskPage() {
       setMcRunning(false);
     }
   }, [annStats, horizon, ppy, nPaths, mcSeed, engine, setMcResult, setMcRunning, setMcError]);
+
+  // ── Regime detection ─────────────────────────────────────────────────────
+
+  const runRegimeDetection = useCallback(async () => {
+    if (!portRet) return;
+    setIsRegimeRunning(true);
+    setRegimeError(null);
+    try {
+      const result = await engine.detectRegimes(portRet, nRegimes, 100, 42);
+      setRegimeResult(result);
+    } catch (e) {
+      setRegimeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsRegimeRunning(false);
+    }
+  }, [portRet, nRegimes, engine]);
 
   // ── Formatters ─────────────────────────────────────────────────────────────
 
@@ -810,7 +834,183 @@ export default function RiskPage() {
         )}
       </motion.section>
 
-      {/* ── SECTION 5: Historical stress periods ────────────────────────── */}
+      {/* ── SECTION 5: Market regime detection ──────────────────────────── */}
+      <motion.section variants={slideUp}>
+        <SectionHeader label="Market Regime Detection" />
+
+        {/* Controls */}
+        <div className="flex items-center gap-4 mb-5">
+          <span className="text-[12px] text-secondary shrink-0">Regimes</span>
+          <div className="flex gap-2">
+            {[2, 3].map((k) => (
+              <button
+                key={k}
+                onClick={() => setNRegimes(k)}
+                className={`h-7 w-8 rounded text-[12px] mono transition-colors duration-[var(--duration)] ${
+                  nRegimes === k
+                    ? 'bg-accent text-white'
+                    : 'bg-subtle text-secondary hover:bg-[var(--bg-hover)]'
+                }`}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={runRegimeDetection}
+            disabled={isRegimeRunning || !portRet}
+            loading={isRegimeRunning}
+          >
+            {isRegimeRunning ? 'Fitting HMM…' : 'Detect Regimes'}
+          </Button>
+          {regimeError && (
+            <span className="text-[12px] text-loss">{regimeError}</span>
+          )}
+        </div>
+
+        {regimeResult && portRet && portEquity ? (
+          <>
+            {/* Summary cards */}
+            <div
+              className="grid gap-3 mb-5"
+              style={{ gridTemplateColumns: `repeat(${nRegimes}, minmax(0,1fr))` }}
+            >
+              {Array.from({ length: nRegimes }, (_, k) => {
+                const meanAnn = (regimeResult.regimeMeans[k] ?? 0) * ppy;
+                const volAnn  = (regimeResult.regimeVols[k]  ?? 0) * Math.sqrt(ppy);
+                const frac    = regimeResult.stationaryDist[k] ?? 0;
+                const label   = k === 0 ? 'Bear' : k === nRegimes - 1 ? 'Bull' : 'Neutral';
+                const variant = k === 0 ? 'loss' : k === nRegimes - 1 ? 'gain' : 'warn';
+                return (
+                  <div key={k} className="rounded-md bg-subtle px-4 py-3 space-y-1">
+                    <span className="text-[11px] uppercase tracking-[0.05em] text-tertiary">{label}</span>
+                    <div className={`mono text-lg font-medium tabular-nums ${variant === 'gain' ? 'text-gain' : variant === 'loss' ? 'text-loss' : 'text-warn'}`}>
+                      {meanAnn >= 0 ? '+' : ''}{(meanAnn * 100).toFixed(1)}% / yr
+                    </div>
+                    <div className="text-[11px] text-secondary">
+                      σ = {(volAnn * 100).toFixed(1)}% · {(frac * 100).toFixed(0)}% of time
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Timeline chart */}
+            <Card padding="md" className="mb-5">
+              <p className="text-[12px] font-medium text-secondary mb-3">
+                Regime timeline — equity curve with regime background
+              </p>
+              <RegimeTimeline
+                returns={Array.from(portRet)}
+                equity={[1, ...Array.from(portEquity)]}
+                stateSequence={regimeResult.stateSequence}
+                dates={equityDates}
+                nRegimes={nRegimes}
+                height={220}
+              />
+            </Card>
+
+            {/* Transition matrix */}
+            <div className="mb-5">
+              <p className="text-[11px] uppercase tracking-[0.05em] text-tertiary mb-3">
+                Transition Matrix
+              </p>
+              <div className="inline-block rounded-md bg-subtle overflow-hidden">
+                <table className="text-[12px] mono">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-2 text-tertiary text-left">From ╲ To</th>
+                      {Array.from({ length: nRegimes }, (_, k) => (
+                        <th key={k} className="px-4 py-2 text-tertiary">
+                          {k === 0 ? 'Bear' : k === nRegimes - 1 ? 'Bull' : 'Neutral'}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {regimeResult.transitionMatrix.map((row, i) => (
+                      <tr key={i} className="hairline-t">
+                        <td className="px-4 py-2 text-secondary">
+                          {i === 0 ? 'Bear' : i === nRegimes - 1 ? 'Bull' : 'Neutral'}
+                        </td>
+                        {row.map((p, j) => (
+                          <td
+                            key={j}
+                            className={`px-4 py-2 text-center tabular-nums ${
+                              i === j ? 'text-accent font-medium' : 'text-primary'
+                            }`}
+                          >
+                            {(p * 100).toFixed(1)}%
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Per-regime performance table */}
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.05em] text-tertiary mb-3">
+                Regime-conditional Statistics
+              </p>
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="hairline-b">
+                    {['Regime', 'Periods', 'Ann. Return', 'Ann. Vol', 'Sharpe'].map((h) => (
+                      <th
+                        key={h}
+                        className="pb-2 pr-4 text-left text-[11px] uppercase tracking-[0.05em] text-tertiary last:pr-0"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: nRegimes }, (_, k) => {
+                    const indices = regimeResult.stateSequence
+                      .map((s, t) => (s === k ? t : -1))
+                      .filter((t) => t >= 0);
+                    const count = indices.length;
+                    const rets  = indices.map((t) => portRet[t] ?? 0);
+                    const muP   = count > 0 ? rets.reduce((a, b) => a + b, 0) / count : 0;
+                    const varP  = count > 1 ? rets.reduce((a, b) => a + (b - muP) ** 2, 0) / (count - 1) : 0;
+                    const muA   = muP * ppy;
+                    const volA  = Math.sqrt(varP * ppy);
+                    const sharpe = volA > 0 ? muA / volA : 0;
+                    const label  = k === 0 ? 'Bear' : k === nRegimes - 1 ? 'Bull' : 'Neutral';
+                    return (
+                      <tr key={k} className="hairline-b last:border-0 hover:bg-[var(--bg-hover)]">
+                        <td className="py-2 pr-4 text-secondary">{label}</td>
+                        <td className="py-2 pr-4 mono text-secondary">{count}</td>
+                        <td className={`py-2 pr-4 mono ${muA >= 0 ? 'text-gain' : 'text-loss'}`}>
+                          {muA >= 0 ? '+' : ''}{(muA * 100).toFixed(2)}%
+                        </td>
+                        <td className="py-2 pr-4 mono text-secondary">{(volA * 100).toFixed(2)}%</td>
+                        <td className={`py-2 mono ${sharpe >= 1 ? 'text-gain' : sharpe >= 0 ? 'text-secondary' : 'text-loss'}`}>
+                          {sharpe.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          !isRegimeRunning && (
+            <p className="text-[13px] text-tertiary">
+              Click "Detect Regimes" to fit a {nRegimes}-state Gaussian HMM to the portfolio return series.
+            </p>
+          )
+        )}
+      </motion.section>
+
+      {/* ── SECTION 6: Historical stress periods ────────────────────────── */}
       <motion.section variants={slideUp}>
         <SectionHeader label="Historical Stress Periods" />
 
@@ -871,7 +1071,7 @@ export default function RiskPage() {
         )}
       </motion.section>
 
-      {/* ── SECTION 6: Marginal risk contribution ───────────────────────── */}
+      {/* ── SECTION 7: Marginal risk contribution ───────────────────────── */}
       <motion.section variants={slideUp}>
         <SectionHeader label="Marginal Risk Contribution" />
 
@@ -913,7 +1113,7 @@ export default function RiskPage() {
         )}
       </motion.section>
 
-      {/* ── SECTION 7: Factor exposure ───────────────────────────────────── */}
+      {/* ── SECTION 8: Factor exposure ───────────────────────────────────── */}
       <motion.section variants={slideUp}>
         <SectionHeader label="Factor Exposure" />
         <p className="text-[13px] text-tertiary">

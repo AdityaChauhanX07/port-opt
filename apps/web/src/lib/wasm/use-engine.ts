@@ -20,6 +20,7 @@ import type {
   FrontierResult,
   MonteCarloParams,
   MonteCarloResult,
+  RegimeResult,
   RiskMetrics,
   SolveFrontierParams,
   ViewInput,
@@ -206,6 +207,13 @@ export interface EngineAPI {
     ci: number,
     seed: number,
   ): Promise<BootstrapResult>;
+
+  detectRegimes(
+    returns: Float64Array,
+    nRegimes?: number,
+    maxIter?: number,
+    seed?: number,
+  ): Promise<RegimeResult>;
 }
 
 export function useEngine(): EngineAPI {
@@ -351,6 +359,12 @@ export function useEngine(): EngineAPI {
           ci,
           seed,
         }),
+      [],
+    ),
+
+    detectRegimes: useCallback(
+      (returns, nRegimes, maxIter, seed) =>
+        call<RegimeResult>('detectRegimes', { returns, nRegimes, maxIter, seed }),
       [],
     ),
   };

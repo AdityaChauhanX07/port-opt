@@ -119,4 +119,11 @@ declare module '*/pkg/engine_wasm' {
     ub: number,
     n_pts: number,
   ): string;
+
+  export function detect_regimes_wasm(
+    returns_flat: Float64Array,
+    n_regimes: number,
+    max_iter: number,
+    seed: bigint,
+  ): string;
 }

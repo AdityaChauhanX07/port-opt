@@ -17,7 +17,7 @@ use engine::{
         gbm::{simulate, summarize_terminal, GbmParams},
     },
     optimize::{self, hrp, risk_parity, black_litterman},
-    risk::{historical_var_cvar, rolling_sharpe, rolling_sortino},
+    risk::{detect_regimes, historical_var_cvar, rolling_sharpe, rolling_sortino},
     stats::{annualize, correlation, max_drawdown, ann_return_vol, cagr},
 };
 use nalgebra::DVector;
@@ -661,6 +661,78 @@ pub fn solve_black_litterman(
                 bi  = best_idx,
                 ir  = vec_to_json(bl.implied_returns.as_slice()),
                 pm  = vec_to_json(bl.posterior_mu.as_slice()),
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Regime detection
+// ---------------------------------------------------------------------------
+
+/// Fit a Gaussian HMM to a return series and decode market regimes.
+///
+/// `returns_flat`: T-element return vector.
+/// `n_regimes`: number of hidden states (2 or 3 recommended).
+/// `max_iter`: maximum Baum-Welch iterations.
+/// `seed`: RNG seed for initialisation perturbation.
+///
+/// Returns JSON:
+/// `{"n_regimes":int,"state_sequence":[...],"state_probabilities":[[...],...]`,
+/// `"regime_means":[...],"regime_vols":[...],"transition_matrix":[[...],...]`,
+/// `"stationary_dist":[...]}`
+#[wasm_bindgen]
+pub fn detect_regimes_wasm(
+    returns_flat: Vec<f64>,
+    n_regimes: usize,
+    max_iter: usize,
+    seed: u64,
+) -> String {
+    let rets = DVector::from_vec(returns_flat);
+    match detect_regimes(&rets, n_regimes, max_iter, 1e-6, seed) {
+        Err(e) => err_json(&e.to_string()),
+        Ok(r) => {
+            // state_probabilities: array of T arrays of length K
+            let probs_json: String = {
+                let rows: Vec<String> = r
+                    .state_probabilities
+                    .iter()
+                    .map(|row| vec_to_json(row))
+                    .collect();
+                format!("[{}]", rows.join(","))
+            };
+
+            // transition_matrix: K × K nested array
+            let trans_json: String = {
+                let rows: Vec<String> = r
+                    .transition_matrix
+                    .iter()
+                    .map(|row| vec_to_json(row))
+                    .collect();
+                format!("[{}]", rows.join(","))
+            };
+
+            // state_sequence as JSON int array
+            let seq_json: String = {
+                let parts: Vec<String> = r.state_sequence.iter().map(|s| s.to_string()).collect();
+                format!("[{}]", parts.join(","))
+            };
+
+            format!(
+                "{{\"n_regimes\":{k},\
+                 \"state_sequence\":{seq},\
+                 \"state_probabilities\":{probs},\
+                 \"regime_means\":{means},\
+                 \"regime_vols\":{vols},\
+                 \"transition_matrix\":{trans},\
+                 \"stationary_dist\":{stat}}}",
+                k     = r.n_regimes,
+                seq   = seq_json,
+                probs = probs_json,
+                means = vec_to_json(&r.regime_means),
+                vols  = vec_to_json(&r.regime_vols),
+                trans = trans_json,
+                stat  = vec_to_json(&r.stationary_dist),
             )
         }
     }

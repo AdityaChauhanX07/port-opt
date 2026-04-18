@@ -13,6 +13,7 @@ import {
   bootstrapSharpe,
   computeCorrelation,
   computeRiskMetrics,
+  detectRegimes,
   runBacktestStatic,
   runBacktestWalkforward,
   runMonteCarlo,
@@ -194,6 +195,15 @@ async function dispatch(method: string, payload: unknown): Promise<unknown> {
         nAssets: number;
       };
       return computeCorrelation(returns, nPeriods, nAssets);
+    }
+    case 'detectRegimes': {
+      const { returns, nRegimes, maxIter, seed } = payload as {
+        returns: Float64Array;
+        nRegimes?: number;
+        maxIter?: number;
+        seed?: number;
+      };
+      return detectRegimes(returns, nRegimes, maxIter, seed);
     }
     case 'bootstrapSharpe': {
       const { returns, rfPerPeriod, nBoot, blockSize, ci, seed } =

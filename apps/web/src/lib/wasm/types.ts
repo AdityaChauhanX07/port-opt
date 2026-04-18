@@ -116,6 +116,23 @@ export interface BlackLittermanResult extends FrontierResult {
   posteriorMu: Float64Array;
 }
 
+/** Result of Gaussian HMM regime detection. */
+export interface RegimeResult {
+  nRegimes: number;
+  /** Most-likely state index per time step (Viterbi), length = T. */
+  stateSequence: number[];
+  /** Posterior state probabilities, shape T × K. */
+  stateProbabilities: number[][];
+  /** Regime mean daily returns, length = K. */
+  regimeMeans: number[];
+  /** Regime daily volatilities, length = K. */
+  regimeVols: number[];
+  /** Row-stochastic transition matrix, shape K × K. */
+  transitionMatrix: number[][];
+  /** Stationary distribution, length = K. */
+  stationaryDist: number[];
+}
+
 // ---------------------------------------------------------------------------
 // Worker message protocol
 // ---------------------------------------------------------------------------
@@ -127,6 +144,7 @@ export type EngineMethod =
   | 'solveCvar'
   | 'solveRobust'
   | 'solveBlackLitterman'
+  | 'detectRegimes'
   | 'runMonteCarlo'
   | 'runBacktestStatic'
   | 'runBacktestWalkforward'

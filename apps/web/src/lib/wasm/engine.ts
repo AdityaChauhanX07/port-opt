@@ -18,6 +18,7 @@ import type {
   FrontierResult,
   MonteCarloParams,
   MonteCarloResult,
+  RegimeResult,
   RiskMetrics,
   SolveFrontierParams,
   ViewInput,
@@ -464,6 +465,38 @@ function packViews(views: ViewInput[]): Float64Array {
     parts.push(v.confidence);
   }
   return new Float64Array(parts);
+}
+
+/**
+ * Fit a Gaussian HMM and decode market regimes via Viterbi.
+ * @param returns Portfolio return series (length T).
+ */
+export async function detectRegimes(
+  returns: Float64Array,
+  nRegimes: number = 2,
+  maxIter: number = 100,
+  seed: number = 42,
+): Promise<RegimeResult> {
+  const m = await wasm();
+  const json = m.detect_regimes_wasm(returns, nRegimes, maxIter, BigInt(seed));
+  const r = parseResult<{
+    n_regimes: number;
+    state_sequence: number[];
+    state_probabilities: number[][];
+    regime_means: number[];
+    regime_vols: number[];
+    transition_matrix: number[][];
+    stationary_dist: number[];
+  }>(json);
+  return {
+    nRegimes: r.n_regimes,
+    stateSequence: r.state_sequence,
+    stateProbabilities: r.state_probabilities,
+    regimeMeans: r.regime_means,
+    regimeVols: r.regime_vols,
+    transitionMatrix: r.transition_matrix,
+    stationaryDist: r.stationary_dist,
+  };
 }
 
 /** Block-bootstrap Sharpe ratio confidence interval. */

@@ -32,3 +32,6 @@ export type { CorrelationMatrixProps } from './CorrelationMatrix';
 
 export { TimeSeriesLine } from './TimeSeriesLine';
 export type { TimeSeriesLineProps, TimeSeriesLineSeries, TimeSeriesRefLine } from './TimeSeriesLine';
+
+export { RegimeTimeline } from './RegimeTimeline';
+export type { RegimeTimelineProps } from './RegimeTimeline';
