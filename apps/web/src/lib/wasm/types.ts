@@ -116,6 +116,26 @@ export interface BlackLittermanResult extends FrontierResult {
   posteriorMu: Float64Array;
 }
 
+/** Result of OLS factor risk decomposition. */
+export interface FactorDecomposition {
+  factorNames: string[];
+  /** OLS factor loadings, length K. */
+  betas: number[];
+  /** Per-factor share of total variance (normalized to sum to R²). */
+  factorRiskContributions: number[];
+  /** Idiosyncratic risk as fraction of total variance (= 1 - R²). */
+  specificRiskPct: number;
+  r_squared: number;
+  /** Annualised Jensen's alpha. */
+  alpha: number;
+  /** Annualised tracking error. */
+  trackingError: number;
+  /** Information ratio = alpha / tracking_error. */
+  informationRatio: number;
+  /** OLS t-statistics for each factor beta, length K. */
+  tStats: number[];
+}
+
 /** Result of Gaussian HMM regime detection. */
 export interface RegimeResult {
   nRegimes: number;
@@ -145,6 +165,7 @@ export type EngineMethod =
   | 'solveRobust'
   | 'solveBlackLitterman'
   | 'detectRegimes'
+  | 'decomposeFactorRisk'
   | 'runMonteCarlo'
   | 'runBacktestStatic'
   | 'runBacktestWalkforward'

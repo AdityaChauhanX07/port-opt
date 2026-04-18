@@ -15,6 +15,7 @@ import type {
   BacktestResult,
   BlackLittermanResult,
   BootstrapResult,
+  FactorDecomposition,
   FrontierResult,
   MonteCarloParams,
   MonteCarloResult,
@@ -465,6 +466,56 @@ function packViews(views: ViewInput[]): Float64Array {
     parts.push(v.confidence);
   }
   return new Float64Array(parts);
+}
+
+/**
+ * OLS factor risk decomposition.
+ * @param portfolioReturns  T-length portfolio return series.
+ * @param factorReturns     Row-major T × K factor return matrix (flat).
+ * @param nPeriods          T
+ * @param nFactors          K
+ * @param factorNames       Length-K factor name array.
+ * @param ppy               Periods per year.
+ */
+export async function decomposeFactorRisk(
+  portfolioReturns: Float64Array,
+  factorReturns: Float64Array,
+  nPeriods: number,
+  nFactors: number,
+  factorNames: string[],
+  ppy: number,
+): Promise<FactorDecomposition> {
+  const m = await wasm();
+  const json = m.decompose_factor_risk(
+    portfolioReturns,
+    factorReturns,
+    nPeriods,
+    nFactors,
+    JSON.stringify(factorNames),
+    ppy,
+  );
+  const r = parseResult<{
+    factor_names: string[];
+    betas: number[];
+    factor_risk_contributions: number[];
+    specific_risk_pct: number;
+    r_squared: number;
+    alpha: number;
+    tracking_error: number;
+    information_ratio: number;
+    t_stats: number[];
+  }>(json);
+  return {
+    factorNames: r.factor_names,
+    betas: r.betas,
+    factorRiskContributions: r.factor_risk_contributions,
+    specificRiskPct: r.specific_risk_pct,
+    r_squared: r.r_squared,
+    alpha: r.alpha,
+    trackingError: r.tracking_error,
+    informationRatio: r.information_ratio,
+    tStats: r.t_stats,
+  };
 }
 
 /**

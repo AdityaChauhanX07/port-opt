@@ -27,6 +27,13 @@ const SnapshotItem = z.object({
   sparkline: z.array(z.number()),
 });
 
+const FactorResponse = z.object({
+  dates: z.array(z.string()),
+  factor_names: z.array(z.string()),
+  values: z.array(z.number()),
+  rf_values: z.array(z.number()),
+});
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -88,4 +95,31 @@ export const dataRouter = router({
 
     return z.array(SnapshotItem).parse(await res.json());
   }),
+
+  fetchFactors: publicProcedure
+    .input(
+      z.object({
+        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        frequency: z.enum(['daily', 'monthly']).default('daily'),
+        model: z.enum(['proxy', 'ff5']).default('proxy'),
+      })
+    )
+    .query(async ({ input }) => {
+      const res = await fetch(`${DATA_SERVICE_URL}/factor-returns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+        cache: 'no-store',
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(
+          typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+        );
+      }
+
+      return FactorResponse.parse(await res.json());
+    }),
 });

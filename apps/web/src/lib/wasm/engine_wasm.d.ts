@@ -126,4 +126,13 @@ declare module '*/pkg/engine_wasm' {
     max_iter: number,
     seed: bigint,
   ): string;
+
+  export function decompose_factor_risk(
+    portfolio_returns: Float64Array,
+    factor_returns_flat: Float64Array,
+    n_periods: number,
+    n_factors: number,
+    factor_names_json: string,
+    ppy: number,
+  ): string;
 }

@@ -35,3 +35,6 @@ export type { TimeSeriesLineProps, TimeSeriesLineSeries, TimeSeriesRefLine } fro
 
 export { RegimeTimeline } from './RegimeTimeline';
 export type { RegimeTimelineProps } from './RegimeTimeline';
+
+export { WaterfallChart } from './WaterfallChart';
+export type { WaterfallChartProps, WaterfallBar } from './WaterfallChart';

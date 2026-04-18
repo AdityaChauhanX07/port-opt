@@ -17,6 +17,7 @@ import type {
   BlackLittermanResult,
   BootstrapResult,
   EngineMethod,
+  FactorDecomposition,
   FrontierResult,
   MonteCarloParams,
   MonteCarloResult,
@@ -214,6 +215,15 @@ export interface EngineAPI {
     maxIter?: number,
     seed?: number,
   ): Promise<RegimeResult>;
+
+  decomposeFactorRisk(
+    portfolioReturns: Float64Array,
+    factorReturns: Float64Array,
+    nPeriods: number,
+    nFactors: number,
+    factorNames: string[],
+    ppy: number,
+  ): Promise<FactorDecomposition>;
 }
 
 export function useEngine(): EngineAPI {
@@ -365,6 +375,19 @@ export function useEngine(): EngineAPI {
     detectRegimes: useCallback(
       (returns, nRegimes, maxIter, seed) =>
         call<RegimeResult>('detectRegimes', { returns, nRegimes, maxIter, seed }),
+      [],
+    ),
+
+    decomposeFactorRisk: useCallback(
+      (portfolioReturns, factorReturns, nPeriods, nFactors, factorNames, ppy) =>
+        call<FactorDecomposition>('decomposeFactorRisk', {
+          portfolioReturns,
+          factorReturns,
+          nPeriods,
+          nFactors,
+          factorNames,
+          ppy,
+        }),
       [],
     ),
   };

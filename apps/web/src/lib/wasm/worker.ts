@@ -13,6 +13,7 @@ import {
   bootstrapSharpe,
   computeCorrelation,
   computeRiskMetrics,
+  decomposeFactorRisk,
   detectRegimes,
   runBacktestStatic,
   runBacktestWalkforward,
@@ -195,6 +196,18 @@ async function dispatch(method: string, payload: unknown): Promise<unknown> {
         nAssets: number;
       };
       return computeCorrelation(returns, nPeriods, nAssets);
+    }
+    case 'decomposeFactorRisk': {
+      const { portfolioReturns, factorReturns, nPeriods, nFactors, factorNames, ppy } =
+        payload as {
+          portfolioReturns: Float64Array;
+          factorReturns: Float64Array;
+          nPeriods: number;
+          nFactors: number;
+          factorNames: string[];
+          ppy: number;
+        };
+      return decomposeFactorRisk(portfolioReturns, factorReturns, nPeriods, nFactors, factorNames, ppy);
     }
     case 'detectRegimes': {
       const { returns, nRegimes, maxIter, seed } = payload as {

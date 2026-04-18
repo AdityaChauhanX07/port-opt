@@ -17,10 +17,10 @@ use engine::{
         gbm::{simulate, summarize_terminal, GbmParams},
     },
     optimize::{self, hrp, risk_parity, black_litterman},
-    risk::{detect_regimes, historical_var_cvar, rolling_sharpe, rolling_sortino},
+    risk::{decompose_factors, detect_regimes, historical_var_cvar, rolling_sharpe, rolling_sortino},
     stats::{annualize, correlation, max_drawdown, ann_return_vol, cagr},
 };
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 
 // ---------------------------------------------------------------------------
 // One-time WASM initialisation
@@ -733,6 +733,81 @@ pub fn detect_regimes_wasm(
                 vols  = vec_to_json(&r.regime_vols),
                 trans = trans_json,
                 stat  = vec_to_json(&r.stationary_dist),
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Factor risk decomposition
+// ---------------------------------------------------------------------------
+
+/// OLS factor risk decomposition.
+///
+/// `portfolio_returns`: T-element portfolio return vector.
+/// `factor_returns_flat`: T × K factor return matrix, row-major.
+/// `n_periods`: T (number of return observations).
+/// `n_factors`: K (number of factors).
+/// `factor_names_json`: JSON array of factor name strings.
+/// `ppy`: periods per year for annualisation.
+///
+/// Returns JSON:
+/// `{"factor_names":[...],"betas":[...],"factor_risk_contributions":[...],`
+/// `"specific_risk_pct":...,"r_squared":...,"alpha":...,"tracking_error":...`,
+/// `"information_ratio":...,"t_stats":[...]}`
+#[wasm_bindgen]
+pub fn decompose_factor_risk(
+    portfolio_returns: Vec<f64>,
+    factor_returns_flat: Vec<f64>,
+    n_periods: usize,
+    n_factors: usize,
+    factor_names_json: String,
+    ppy: usize,
+) -> String {
+    if factor_returns_flat.len() != n_periods * n_factors {
+        return err_json(&format!(
+            "factor_returns_flat length {} != {} periods × {} factors",
+            factor_returns_flat.len(),
+            n_periods,
+            n_factors,
+        ));
+    }
+
+    let port = DVector::from_vec(portfolio_returns);
+
+    // Rust DMatrix::from_vec is column-major; our flat data is row-major.
+    // Build row-major → column-major conversion manually.
+    let factor_mat = DMatrix::from_fn(n_periods, n_factors, |r, c| {
+        factor_returns_flat[r * n_factors + c]
+    });
+
+    let names: Vec<String> = match serde_json::from_str(&factor_names_json) {
+        Ok(v) => v,
+        Err(e) => return err_json(&format!("invalid factor_names_json: {e}")),
+    };
+
+    match decompose_factors(&port, &factor_mat, &names, ppy) {
+        Err(e) => err_json(&e.to_string()),
+        Ok(d) => {
+            format!(
+                "{{\"factor_names\":{names},\
+                 \"betas\":{betas},\
+                 \"factor_risk_contributions\":{frc},\
+                 \"specific_risk_pct\":{srp},\
+                 \"r_squared\":{r2},\
+                 \"alpha\":{alpha},\
+                 \"tracking_error\":{te},\
+                 \"information_ratio\":{ir},\
+                 \"t_stats\":{ts}}}",
+                names = factor_names_json,
+                betas = vec_to_json(d.betas.as_slice()),
+                frc   = vec_to_json(d.factor_risk_contributions.as_slice()),
+                srp   = d.specific_risk_pct,
+                r2    = d.r_squared,
+                alpha = d.alpha,
+                te    = d.tracking_error,
+                ir    = d.information_ratio,
+                ts    = vec_to_json(d.t_stats.as_slice()),
             )
         }
     }

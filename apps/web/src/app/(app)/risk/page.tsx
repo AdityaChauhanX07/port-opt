@@ -11,8 +11,10 @@ import {
   TimeSeriesLine,
   GroupedBarChart,
   RegimeTimeline,
+  WaterfallChart,
 } from '@portopt/charts';
-import type { RegimeResult } from '@/lib/wasm/types';
+import type { FactorDecomposition, RegimeResult } from '@/lib/wasm/types';
+import { api } from '@/lib/trpc/client';
 import { usePortfolioStore } from '@/lib/stores/portfolio';
 import { useRiskStore } from '@/lib/stores/risk';
 import { useEngine } from '@/lib/wasm/use-engine';
@@ -38,6 +40,11 @@ const C = {
 };
 
 const PPY_MAP = { daily: 252, weekly: 52, monthly: 12 } as const;
+
+const FACTOR_COLORS = [
+  '#5e8eff', '#3fb950', '#f59e0b', '#f85149', '#8b5cf6',
+  '#22d3ee', '#fb923c', '#a3e635',
+];
 
 // ---------------------------------------------------------------------------
 // Stress periods
@@ -312,6 +319,12 @@ export default function RiskPage() {
   const [regimeError,     setRegimeError]     = useState<string | null>(null);
   const [nRegimes,        setNRegimes]        = useState(2);
 
+  // Factor decomposition
+  const [factorResult,    setFactorResult]    = useState<FactorDecomposition | null>(null);
+  const [isFactorRunning, setIsFactorRunning] = useState(false);
+  const [factorError,     setFactorError]     = useState<string | null>(null);
+  const [factorModel,     setFactorModel]     = useState<'proxy' | 'ff5'>('proxy');
+
   // ── Prerequisites ──────────────────────────────────────────────────────────
   const hasData    = returns !== null && nPeriods > 1 && nAssets > 0;
   const hasWeights = currentWeights !== null;
@@ -490,6 +503,72 @@ export default function RiskPage() {
       setIsRegimeRunning(false);
     }
   }, [portRet, nRegimes, engine]);
+
+  // ── Factor decomposition ─────────────────────────────────────────────────
+
+  const runFactorDecomposition = useCallback(async () => {
+    if (!portRet || !store.dateRange) return;
+    setIsFactorRunning(true);
+    setFactorError(null);
+    try {
+      // Fetch factor returns from data service
+      const factorData = await fetch('/api/trpc/data.fetchFactors?' + new URLSearchParams({
+        input: JSON.stringify({
+          start_date: store.dateRange.start,
+          end_date:   store.dateRange.end,
+          frequency:  frequency === 'weekly' ? 'daily' : frequency,
+          model:      factorModel,
+        }),
+      })).then(async (r) => {
+        if (!r.ok) throw new Error(await r.text());
+        const json = await r.json() as { result: { data: { dates: string[]; factor_names: string[]; values: number[] } } };
+        return json.result.data;
+      });
+
+      const { dates: factorDates, factor_names, values } = factorData;
+      const K = factor_names.length;
+
+      // Align factor dates with portfolio return dates (equityDates)
+      const portDates = equityDates; // dates of returns (T)
+      const portDateSet = new Set(portDates);
+      const aligned: number[] = [];
+      const usedPortIdx: number[] = [];
+
+      for (let i = 0; i < factorDates.length; i++) {
+        const d = factorDates[i];
+        if (portDateSet.has(d)) {
+          const pidx = portDates.indexOf(d);
+          usedPortIdx.push(pidx);
+          for (let k = 0; k < K; k++) {
+            aligned.push(values[i * K + k]);
+          }
+        }
+      }
+
+      if (usedPortIdx.length < K + 5) {
+        throw new Error('Too few overlapping dates between portfolio and factor data.');
+      }
+
+      // Build aligned portfolio returns
+      const alignedPort = new Float64Array(usedPortIdx.map((i) => portRet[i] ?? 0));
+      const alignedFactors = new Float64Array(aligned);
+      const T = usedPortIdx.length;
+
+      const result = await engine.decomposeFactorRisk(
+        alignedPort,
+        alignedFactors,
+        T,
+        K,
+        factor_names,
+        ppy,
+      );
+      setFactorResult(result);
+    } catch (e) {
+      setFactorError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsFactorRunning(false);
+    }
+  }, [portRet, store.dateRange, frequency, factorModel, equityDates, engine, ppy]);
 
   // ── Formatters ─────────────────────────────────────────────────────────────
 
@@ -1113,12 +1192,165 @@ export default function RiskPage() {
         )}
       </motion.section>
 
-      {/* ── SECTION 8: Factor exposure ───────────────────────────────────── */}
+      {/* ── SECTION 8: Factor decomposition ─────────────────────────────── */}
       <motion.section variants={slideUp}>
-        <SectionHeader label="Factor Exposure" />
-        <p className="text-[13px] text-tertiary">
-          Coming soon — requires factor return data from the Python service.
-        </p>
+        <SectionHeader label="Factor Decomposition" />
+
+        {/* Controls */}
+        <div className="flex items-center gap-4 mb-5 flex-wrap">
+          <span className="text-[12px] text-secondary shrink-0">Model</span>
+          <div className="flex gap-2">
+            {(['proxy', 'ff5'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setFactorModel(m)}
+                className={`h-7 px-3 rounded text-[12px] transition-colors duration-[var(--duration)] ${
+                  factorModel === m
+                    ? 'bg-accent text-white'
+                    : 'bg-subtle text-secondary hover:bg-[var(--bg-hover)]'
+                }`}
+              >
+                {m === 'proxy' ? 'Market + Sectors' : 'Fama-French 5'}
+              </button>
+            ))}
+          </div>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={runFactorDecomposition}
+            disabled={isFactorRunning || !portRet}
+            loading={isFactorRunning}
+          >
+            {isFactorRunning ? 'Running OLS…' : 'Run Decomposition'}
+          </Button>
+          {factorError && (
+            <span className="text-[12px] text-loss max-w-sm">{factorError}</span>
+          )}
+        </div>
+
+        {factorResult ? (
+          <>
+            {/* Summary metrics */}
+            <div className="grid grid-cols-4 gap-3 mb-6">
+              <MetricCard
+                label="R²"
+                value={factorResult.r_squared.toFixed(3)}
+                variant={factorResult.r_squared > 0.7 ? 'gain' : factorResult.r_squared > 0.4 ? 'warn' : 'default'}
+              />
+              <MetricCard
+                label="Alpha (ann.)"
+                value={`${factorResult.alpha >= 0 ? '+' : ''}${(factorResult.alpha * 100).toFixed(2)}%`}
+                variant={factorResult.alpha >= 0 ? 'gain' : 'loss'}
+              />
+              <MetricCard
+                label="Tracking Error"
+                value={`${(factorResult.trackingError * 100).toFixed(2)}%`}
+              />
+              <MetricCard
+                label="Info. Ratio"
+                value={factorResult.informationRatio.toFixed(2)}
+                variant={
+                  factorResult.informationRatio > 0.5 ? 'gain' :
+                  factorResult.informationRatio > 0   ? 'warn' :
+                  'loss'
+                }
+              />
+            </div>
+
+            {/* Waterfall chart */}
+            <Card padding="md" className="mb-6">
+              <p className="text-[12px] font-medium text-secondary mb-3">
+                Risk attribution — factor + idiosyncratic
+              </p>
+              <WaterfallChart
+                showTotal
+                bars={[
+                  ...factorResult.factorNames.map((name, k) => ({
+                    label: name,
+                    value: factorResult.factorRiskContributions[k] ?? 0,
+                    color: FACTOR_COLORS[k % FACTOR_COLORS.length],
+                  })),
+                  {
+                    label: 'Specific',
+                    value: factorResult.specificRiskPct,
+                    color: '#484848',
+                  },
+                ]}
+                height={220}
+              />
+            </Card>
+
+            {/* Factor exposure table */}
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.05em] text-tertiary mb-3">
+                Factor Exposures (Beta)
+              </p>
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="hairline-b">
+                    {['Factor', 'Beta', 'Risk Contrib.', 't-stat', 'Significant'].map((h) => (
+                      <th
+                        key={h}
+                        className="pb-2 pr-4 text-left text-[11px] uppercase tracking-[0.05em] text-tertiary last:pr-0"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {factorResult.factorNames.map((name, k) => {
+                    const beta = factorResult.betas[k] ?? 0;
+                    const rc   = factorResult.factorRiskContributions[k] ?? 0;
+                    const tstat = factorResult.tStats[k] ?? 0;
+                    const sig   = Math.abs(tstat) > 2;
+                    return (
+                      <tr key={name} className="hairline-b last:border-0 hover:bg-[var(--bg-hover)]">
+                        <td className="py-2 pr-4 text-secondary flex items-center gap-2">
+                          <span
+                            className="inline-block w-2 h-2 rounded-full"
+                            style={{ background: FACTOR_COLORS[k % FACTOR_COLORS.length] }}
+                          />
+                          {name}
+                        </td>
+                        <td className={`py-2 pr-4 mono ${beta > 0 ? 'text-gain' : beta < 0 ? 'text-loss' : 'text-secondary'}`}>
+                          {beta >= 0 ? '+' : ''}{beta.toFixed(3)}
+                        </td>
+                        <td className="py-2 pr-4 mono text-secondary">
+                          {(rc * 100).toFixed(1)}%
+                        </td>
+                        <td className={`py-2 pr-4 mono tabular-nums ${sig ? 'text-primary font-medium' : 'text-tertiary'}`}>
+                          {tstat >= 0 ? '+' : ''}{tstat.toFixed(2)}
+                        </td>
+                        <td className="py-2 mono">
+                          {sig ? (
+                            <span className="text-gain">✓</span>
+                          ) : (
+                            <span className="text-tertiary">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="hairline-t">
+                    <td className="pt-2 pr-4 text-tertiary text-[11px]">Specific</td>
+                    <td className="pt-2 pr-4 mono text-tertiary">—</td>
+                    <td className="pt-2 pr-4 mono text-secondary">{(factorResult.specificRiskPct * 100).toFixed(1)}%</td>
+                    <td className="pt-2 pr-4 mono text-tertiary">—</td>
+                    <td className="pt-2 mono text-tertiary">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          !isFactorRunning && (
+            <p className="text-[13px] text-tertiary">
+              Click "Run Decomposition" to regress portfolio returns on{' '}
+              {factorModel === 'proxy' ? 'market + sector ETF proxy factors' : 'Fama-French 5 factors'}.
+            </p>
+          )
+        )}
       </motion.section>
 
     </motion.div>
