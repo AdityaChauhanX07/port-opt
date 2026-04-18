@@ -3,10 +3,12 @@
 import React, { useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { useSession } from 'next-auth/react';
 import { api } from '@/lib/trpc/client';
 import { usePortfolioStore } from '@/lib/stores/portfolio';
 import { useBacktestStore } from '@/lib/stores/backtest';
 import { slideUp, stagger } from '@/lib/motion';
+import type { SavedPortfolio } from '@/lib/storage';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -232,6 +234,128 @@ function Stat({ label, value, dimValue }: { label: string; value: string; dimVal
 }
 
 // ---------------------------------------------------------------------------
+// Saved portfolios
+// ---------------------------------------------------------------------------
+
+const ALGO_SHORT: Record<string, string> = {
+  markowitz: 'MVO',
+  hrp: 'HRP',
+  risk_parity: 'ERC',
+  cvar: 'CVaR',
+  robust: 'Robust',
+  black_litterman: 'B-L',
+};
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function SavedPortfoliosList() {
+  const { status } = useSession();
+  const utils = api.useUtils();
+
+  const { data: portfolios, isLoading } = api.user.listPortfolios.useQuery(undefined, {
+    enabled: status === 'authenticated',
+    staleTime: 30_000,
+  });
+
+  const deleteMutation = api.user.deletePortfolio.useMutation({
+    onSuccess: () => utils.user.listPortfolios.invalidate(),
+  });
+
+  const store = usePortfolioStore();
+
+  const loadPortfolio = (p: SavedPortfolio) => {
+    store.setTickers(p.tickers);
+    store.setWeights(new Float64Array(p.weights));
+  };
+
+  if (status === 'loading' || isLoading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="skeleton h-14 w-full rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border)] py-12 gap-2">
+        <p className="text-[13px] text-muted">Sign in to save and load portfolios</p>
+        <Link href="/login" className="text-[12px] text-accent hover:underline">Sign in</Link>
+      </div>
+    );
+  }
+
+  if (!portfolios || portfolios.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border)] py-12 gap-2">
+        <p className="text-[13px] text-muted">No saved portfolios yet</p>
+        <p className="text-[12px] text-muted opacity-60">Save a portfolio from the Optimize page.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {portfolios.map((p) => (
+        <div
+          key={p.id}
+          className="flex items-center gap-4 rounded-lg border border-[var(--border)] px-4 py-3 hover:border-[var(--border-strong)] transition-colors"
+        >
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-[13px] font-medium text-primary truncate">{p.name}</span>
+              <span className="mono text-[10px] text-muted bg-[var(--bg-hover)] border border-[var(--border)] rounded px-1.5 py-0.5 shrink-0">
+                {ALGO_SHORT[p.algorithm] ?? p.algorithm}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] text-muted">
+              <span>{p.tickers.slice(0, 4).join(', ')}{p.tickers.length > 4 ? ` +${p.tickers.length - 4}` : ''}</span>
+              <span>·</span>
+              <span className="tabular-nums">Sharpe {fmtNum(p.metrics.sharpe)}</span>
+              <span>·</span>
+              <span>{fmtDate(p.updatedAt)}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/optimize"
+              onClick={() => loadPortfolio(p)}
+              className="flex h-7 items-center rounded border border-[var(--border)] bg-[var(--bg-hover)] px-3 text-[11px] font-medium text-primary hover:border-[var(--border-strong)] transition-colors"
+            >
+              Load
+            </Link>
+            <button
+              onClick={() => deleteMutation.mutate({ id: p.id })}
+              disabled={deleteMutation.isPending}
+              className="flex h-7 w-7 items-center justify-center rounded border border-[var(--border)] text-muted hover:text-loss hover:border-[rgba(248,81,73,0.4)] transition-colors disabled:opacity-40"
+              aria-label="Delete portfolio"
+            >
+              <TrashIcon />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6M14 11v6" />
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -338,12 +462,9 @@ export default function DashboardPage() {
           <MarketStrip />
         </Section>
 
-        {/* ── Section 5: Saved portfolios (stub) ──────────────────── */}
+        {/* ── Section 5: Saved portfolios ──────────────────────────── */}
         <Section label="Saved portfolios">
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border)] py-12 gap-2">
-            <p className="text-[13px] text-muted">No saved portfolios yet</p>
-            <p className="text-[12px] text-muted opacity-60">Portfolio saving will be available in a future release.</p>
-          </div>
+          <SavedPortfoliosList />
         </Section>
       </motion.div>
     </div>

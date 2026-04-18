@@ -224,6 +224,20 @@ export default function OptimizePage() {
   const [blImpliedRets,  setBlImpliedRets]  = useState<Float64Array | null>(null);
   const [blPosteriorMu,  setBlPosteriorMu]  = useState<Float64Array | null>(null);
 
+  // ── Save dialog state ────────────────────────────────────────────────────
+  const [saveOpen,    setSaveOpen]    = useState(false);
+  const [saveName,    setSaveName]    = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const saveMutation = api.user.savePortfolio.useMutation({
+    onSuccess: () => {
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setSaveOpen(false);
+        setSaveSuccess(false);
+      }, 1400);
+    },
+  });
+
   // ── Hover state (drives weights + metrics display) ───────────────────────
   const [hoveredIdx,     setHoveredIdx]     = useState<number | null>(null);
   const [hoveredWeights, setHoveredWeights] = useState<Float64Array | null>(null);
@@ -772,7 +786,7 @@ export default function OptimizePage() {
             )}
           </div>
 
-          <div className="p-5 hairline-t">
+          <div className="p-5 hairline-t flex flex-col gap-2">
             <Button
               variant="primary"
               size="lg"
@@ -784,9 +798,23 @@ export default function OptimizePage() {
               {isOptimizing ? 'Computing' : 'Optimize'}
             </Button>
             {!hasData && (
-              <p className="mt-2 text-center text-[11px] text-muted">
+              <p className="mt-1 text-center text-[11px] text-muted">
                 Load data first
               </p>
+            )}
+            {currentWeights && (
+              <Button
+                variant="secondary"
+                size="md"
+                className="w-full"
+                onClick={() => {
+                  const auto = storeTickers.slice(0, 3).join(', ');
+                  setSaveName(`${auto} — ${ALGORITHM_TABS.find((a) => a.value === algorithm)?.label ?? algorithm}`);
+                  setSaveOpen(true);
+                }}
+              >
+                Save Portfolio
+              </Button>
             )}
           </div>
         </motion.aside>
@@ -934,6 +962,102 @@ export default function OptimizePage() {
           </div>
         </motion.div>
       </div>
+
+      {/* Save dialog */}
+      <AnimatePresence>
+        {saveOpen && (
+          <motion.div
+            key="save-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+            onClick={(e) => { if (e.target === e.currentTarget) setSaveOpen(false); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 6 }}
+              transition={{ duration: 0.15 }}
+              className="w-full max-w-sm rounded-xl border border-[var(--border)] p-6 shadow-xl"
+              style={{ background: 'var(--bg-elevated)' }}
+            >
+              {saveSuccess ? (
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <CheckCircleIcon />
+                  <p className="text-[14px] font-medium text-primary">Portfolio saved!</p>
+                </div>
+              ) : (
+                <>
+                  <p className="mb-4 text-[14px] font-medium text-primary">Save Portfolio</p>
+                  <label className="block text-[12px] text-secondary mb-1.5">Name</label>
+                  <Input
+                    value={saveName}
+                    onChange={(e) => setSaveName(e.target.value)}
+                    placeholder="My portfolio"
+                    className="mb-4"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && saveName.trim() && currentWeights) {
+                        saveMutation.mutate({
+                          name: saveName.trim(),
+                          tickers: storeTickers,
+                          weights: Array.from(currentWeights),
+                          algorithm,
+                          constraints: { longOnly, lb, ub, rf },
+                          metrics: {
+                            annReturn: metrics?.ret ?? 0,
+                            annVol: metrics?.vol ?? 0,
+                            sharpe: metrics?.sharpe ?? 0,
+                            maxDD: 0,
+                          },
+                        });
+                      }
+                    }}
+                    autoFocus
+                  />
+                  {saveMutation.error && (
+                    <p className="mb-3 text-[12px] text-loss">
+                      {saveMutation.error.message.includes('UNAUTHORIZED')
+                        ? 'Sign in to save portfolios.'
+                        : 'Save failed — please try again.'}
+                    </p>
+                  )}
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="secondary" size="md" onClick={() => setSaveOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="md"
+                      loading={saveMutation.isPending}
+                      disabled={!saveName.trim() || !currentWeights}
+                      onClick={() => {
+                        if (!saveName.trim() || !currentWeights) return;
+                        saveMutation.mutate({
+                          name: saveName.trim(),
+                          tickers: storeTickers,
+                          weights: Array.from(currentWeights),
+                          algorithm,
+                          constraints: { longOnly, lb, ub, rf },
+                          metrics: {
+                            annReturn: metrics?.ret ?? 0,
+                            annVol: metrics?.vol ?? 0,
+                            sharpe: metrics?.sharpe ?? 0,
+                            maxDD: 0,
+                          },
+                        });
+                      }}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -1065,6 +1189,15 @@ function BlViewRow({
 // ---------------------------------------------------------------------------
 // B-L posterior vs implied returns chart (pure CSS bars, no D3)
 // ---------------------------------------------------------------------------
+
+function CheckCircleIcon() {
+  return (
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--gain)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  );
+}
 
 function BlReturnsChart({
   tickers,
