@@ -105,4 +105,18 @@ declare module '*/pkg/engine_wasm' {
     ci: number,
     seed: bigint,
   ): string;
+
+  export function solve_black_litterman(
+    cov_flat: Float64Array,
+    n_assets: number,
+    market_weights_flat: Float64Array,
+    rf: number,
+    market_return: number,
+    views_packed: Float64Array,
+    tau: number,
+    long_only: boolean,
+    lb: number,
+    ub: number,
+    n_pts: number,
+  ): string;
 }

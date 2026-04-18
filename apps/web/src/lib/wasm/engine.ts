@@ -13,12 +13,14 @@
 
 import type {
   BacktestResult,
+  BlackLittermanResult,
   BootstrapResult,
   FrontierResult,
   MonteCarloParams,
   MonteCarloResult,
   RiskMetrics,
   SolveFrontierParams,
+  ViewInput,
   WalkforwardConfig,
   WalkforwardResult,
 } from './types';
@@ -379,6 +381,89 @@ export async function computeCorrelation(
   const json = m.compute_correlation(returns, nPeriods, nAssets);
   const r = parseResult<{ corr: (number | null)[] }>(json);
   return toF64(r.corr);
+}
+
+/**
+ * Black-Litterman model: blend market equilibrium returns with investor views.
+ *
+ * @param cov          Row-major annualised covariance (nAssets × nAssets).
+ * @param nAssets      Number of assets.
+ * @param marketWeights Market-cap or equal weights (length = nAssets).
+ * @param rf           Risk-free rate.
+ * @param marketReturn Expected market portfolio return.
+ * @param views        Investor views (empty = pure equilibrium).
+ * @param tau          Prior uncertainty scalar (typically 0.05).
+ */
+export async function solveBlackLitterman(
+  cov: Float64Array,
+  nAssets: number,
+  marketWeights: Float64Array,
+  rf: number,
+  marketReturn: number,
+  views: ViewInput[],
+  tau: number,
+  longOnly: boolean,
+  lb: number,
+  ub: number,
+  nPts: number,
+): Promise<BlackLittermanResult> {
+  const m = await wasm();
+
+  // Pack views into flat array: [n_views, per view: n_picks, idx0, w0, …, ret, conf]
+  const packed = packViews(views);
+
+  const json = m.solve_black_litterman(
+    cov,
+    nAssets,
+    marketWeights,
+    rf,
+    marketReturn,
+    packed,
+    tau,
+    longOnly,
+    lb,
+    ub,
+    nPts,
+  );
+  const r = parseResult<{
+    weights: (number | null)[];
+    risks: (number | null)[];
+    returns: (number | null)[];
+    sharpes: (number | null)[];
+    best_idx: number | null;
+    n_portfolios: number;
+    n_assets: number;
+    implied_returns: (number | null)[];
+    posterior_mu: (number | null)[];
+  }>(json);
+
+  return {
+    weights: toF64(r.weights),
+    risks: toF64(r.risks),
+    returns: toF64(r.returns),
+    sharpes: toF64(r.sharpes),
+    bestIdx: r.best_idx,
+    nPoints: r.n_portfolios,
+    nAssets: r.n_assets,
+    impliedReturns: toF64(r.implied_returns),
+    posteriorMu: toF64(r.posterior_mu),
+  };
+}
+
+/** Pack ViewInput[] into the flat format expected by the Rust WASM bridge. */
+function packViews(views: ViewInput[]): Float64Array {
+  if (views.length === 0) return new Float64Array(0);
+  const parts: number[] = [views.length];
+  for (const v of views) {
+    parts.push(v.assetIndices.length);
+    for (let i = 0; i < v.assetIndices.length; i++) {
+      parts.push(v.assetIndices[i]);
+      parts.push(v.weights[i] ?? 1);
+    }
+    parts.push(v.expectedReturn);
+    parts.push(v.confidence);
+  }
+  return new Float64Array(parts);
 }
 
 /** Block-bootstrap Sharpe ratio confidence interval. */

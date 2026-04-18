@@ -16,6 +16,7 @@ import { api } from '../../../lib/trpc/client';
 import { usePortfolioStore } from '../../../lib/stores/portfolio';
 import { useEngine } from '../../../lib/wasm/use-engine';
 import { slideUp, stagger } from '../../../lib/motion';
+import { useKeyboard } from '../../../lib/hooks/use-keyboard';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -40,15 +41,28 @@ const FREQUENCY_OPTIONS = [
 ];
 
 const ALGORITHM_TABS = [
-  { value: 'markowitz',   label: 'MVO'    },
-  { value: 'hrp',         label: 'HRP'    },
-  { value: 'risk_parity', label: 'ERC'    },
-  { value: 'cvar',        label: 'CVaR'   },
-  { value: 'robust',      label: 'Robust' },
+  { value: 'markowitz',      label: 'MVO'   },
+  { value: 'hrp',            label: 'HRP'   },
+  { value: 'risk_parity',    label: 'ERC'   },
+  { value: 'cvar',           label: 'CVaR'  },
+  { value: 'robust',         label: 'Robust'},
+  { value: 'black_litterman',label: 'B-L'   },
 ];
 
 const OVERLAY_ALGORITHMS = ['hrp', 'risk_parity', 'cvar', 'robust'] as const;
 type OverlayAlgorithm = typeof OVERLAY_ALGORITHMS[number];
+
+// ── Black-Litterman view types ────────────────────────────────────────────────
+type BlDirection = 'returns' | 'outperforms';
+
+interface BlViewRow {
+  id: string;
+  assetIdx: number;
+  direction: BlDirection;
+  targetAssetIdx: number;  // only relevant for 'outperforms'
+  expectedReturn: number;  // in % (e.g. 12 means 12 %)
+  confidence: number;      // 0–1
+}
 
 const containerVariants = stagger(0.06);
 
@@ -156,7 +170,7 @@ function MetricCard({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.12 }}
-          className={`mono text-[26px] font-semibold leading-none ${colorClass}`}
+          className={`mono text-[22px] font-semibold leading-none ${colorClass}`}
         >
           {displayed}
         </motion.p>
@@ -169,7 +183,7 @@ function MetricCard({
 // Page
 // ---------------------------------------------------------------------------
 
-type Algorithm = 'markowitz' | 'hrp' | 'risk_parity' | 'cvar' | 'robust';
+type Algorithm = 'markowitz' | 'hrp' | 'risk_parity' | 'cvar' | 'robust' | 'black_litterman';
 
 export default function OptimizePage() {
   // ── Local form state ────────────────────────────────────────────────────
@@ -202,6 +216,13 @@ export default function OptimizePage() {
   const [selectedIdx,  setSelectedIdx]  = useState<number | null>(null);
   const [optError,     setOptError]     = useState<string | null>(null);
   const [wasmMissing,  setWasmMissing]  = useState(false);
+
+  // ── Black-Litterman local state ──────────────────────────────────────────
+  const [blViews,        setBlViews]        = useState<BlViewRow[]>([]);
+  const [blTau,          setBlTau]          = useState(0.05);
+  const [blMarketReturn, setBlMarketReturn] = useState<number | null>(null);
+  const [blImpliedRets,  setBlImpliedRets]  = useState<Float64Array | null>(null);
+  const [blPosteriorMu,  setBlPosteriorMu]  = useState<Float64Array | null>(null);
 
   // ── Hover state (drives weights + metrics display) ───────────────────────
   const [hoveredIdx,     setHoveredIdx]     = useState<number | null>(null);
@@ -252,6 +273,15 @@ export default function OptimizePage() {
   const hasData = nPeriods > 0 && !!returns;
   // Returns have T-1 rows; nPeriods from the store counts price rows (T).
   const nRetPeriods = returns && nAssets > 0 ? Math.floor(returns.length / nAssets) : 0;
+
+  // ── Auto market return: equal-weight annualised return from loaded data ───
+  const autoMarketReturn = useMemo(() => {
+    if (!returns || nRetPeriods === 0 || nAssets === 0) return 0.07;
+    const ew = new Array<number>(nAssets).fill(1 / nAssets);
+    return portfolioStats(returns, nRetPeriods, nAssets, ew, rf, ppy).ret;
+  }, [returns, nRetPeriods, nAssets, rf, ppy]);
+
+  const effectiveMarketReturn = blMarketReturn ?? autoMarketReturn;
 
   // ── Derived chart points ──────────────────────────────────────────────────
   const chartPoints = useMemo<FrontierPoint[]>(() => {
@@ -432,6 +462,39 @@ export default function OptimizePage() {
           store.setFrontier(null);
           break;
         }
+        case 'black_litterman': {
+          const cov = computeCovariance(returns, nRetPeriods, nAssets);
+          const marketWeights = new Float64Array(nAssets).fill(1 / nAssets);
+          // Convert UI views to ViewInput format
+          const viewInputs = blViews.map((v) => {
+            if (v.direction === 'returns') {
+              return {
+                assetIndices: [v.assetIdx],
+                weights: [1.0],
+                expectedReturn: v.expectedReturn / 100,
+                confidence: v.confidence,
+              };
+            }
+            // Relative: asset outperforms target
+            return {
+              assetIndices: [v.assetIdx, v.targetAssetIdx],
+              weights: [1.0, -1.0],
+              expectedReturn: v.expectedReturn / 100,
+              confidence: v.confidence,
+            };
+          });
+          const result = await engine.solveBlackLitterman(
+            cov, nAssets, marketWeights, rf, effectiveMarketReturn,
+            viewInputs, blTau, longOnly, lb, ub, nPoints,
+          );
+          store.setFrontier(result);
+          setBlImpliedRets(result.impliedReturns);
+          setBlPosteriorMu(result.posteriorMu);
+          if (result.bestIdx != null) {
+            store.setWeights(result.weights.slice(result.bestIdx * nAssets, (result.bestIdx + 1) * nAssets));
+          }
+          break;
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -444,6 +507,29 @@ export default function OptimizePage() {
       store.setOptimizing(false);
     }
   }
+
+  // ── Keyboard shortcuts ──────────────────────────────────────────────────
+  const tickerRef = useRef<HTMLInputElement>(null);
+
+  useKeyboard([
+    {
+      key: 'Enter',
+      meta: true,
+      handler: () => { if (hasData && !isOptimizing) void handleOptimize(); },
+      ignoreInputs: false,
+    },
+    {
+      key: 'l',
+      meta: true,
+      handler: () => tickerRef.current?.focus(),
+      ignoreInputs: false,
+    },
+    ...ALGORITHM_TABS.map((tab, i) => ({
+      key: String(i + 1),
+      handler: () => setAlgorithm(tab.value as Algorithm),
+      ignoreInputs: true,
+    })),
+  ]);
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
@@ -459,6 +545,7 @@ export default function OptimizePage() {
         className="flex flex-wrap items-center gap-2 px-8 py-4 hairline-b"
       >
         <Input
+          ref={tickerRef}
           value={tickerText}
           onChange={(e) => setTickerText(e.target.value)}
           placeholder="AAPL, MSFT, TLT, …"
@@ -522,7 +609,7 @@ export default function OptimizePage() {
             />
           </div>
 
-          <div className="flex flex-col gap-5 p-5 flex-1">
+          <div className="flex flex-col gap-5 p-5 flex-1 bg-inset">
             <SectionLabel>Constraints</SectionLabel>
 
             <div className="flex items-center justify-between">
@@ -583,7 +670,7 @@ export default function OptimizePage() {
               onChange={(v) => store.setConstraints({ shrinkageAlpha: v })}
             />
 
-            {algorithm === 'markowitz' && (
+            {(algorithm === 'markowitz' || algorithm === 'black_litterman') && (
               <Slider
                 label="Frontier points"
                 value={nPoints}
@@ -593,6 +680,95 @@ export default function OptimizePage() {
                 format={(v) => String(Math.round(v))}
                 onChange={(v) => store.setConstraints({ nPoints: v })}
               />
+            )}
+
+            {/* ── Black-Litterman extra controls ───────────────────────── */}
+            {algorithm === 'black_litterman' && (
+              <>
+                <div className="hairline-t -mx-5 px-5 pt-4">
+                  <SectionLabel>Views</SectionLabel>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {blViews.length === 0 ? (
+                    <p className="text-[11px] text-muted">
+                      No views — pure equilibrium weights
+                    </p>
+                  ) : (
+                    blViews.map((view, vi) => (
+                      <BlViewRow
+                        key={view.id}
+                        view={view}
+                        tickers={storeTickers}
+                        nAssets={nAssets}
+                        onUpdate={(patch) =>
+                          setBlViews((prev) =>
+                            prev.map((v, i) => (i === vi ? { ...v, ...patch } : v))
+                          )
+                        }
+                        onDelete={() =>
+                          setBlViews((prev) => prev.filter((_, i) => i !== vi))
+                        }
+                      />
+                    ))
+                  )}
+                  <button
+                    type="button"
+                    disabled={nAssets < 1}
+                    onClick={() =>
+                      setBlViews((prev) => [
+                        ...prev,
+                        {
+                          id: Math.random().toString(36).slice(2),
+                          assetIdx: 0,
+                          direction: 'returns',
+                          targetAssetIdx: Math.min(1, nAssets - 1),
+                          expectedReturn: 10,
+                          confidence: 0.5,
+                        },
+                      ])
+                    }
+                    className="flex items-center gap-1.5 text-[11px] text-accent hover:text-accent-hover transition-colors duration-[var(--duration-fast)] disabled:opacity-40"
+                  >
+                    <span>+ Add view</span>
+                  </button>
+                </div>
+
+                <div className="hairline-t -mx-5 px-5 pt-4">
+                  <SectionLabel>B-L Parameters</SectionLabel>
+                </div>
+
+                <Slider
+                  label="Prior uncertainty (τ)"
+                  value={blTau}
+                  min={0.01}
+                  max={0.20}
+                  step={0.01}
+                  format={(v) => v.toFixed(2)}
+                  onChange={setBlTau}
+                />
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-tertiary">Market return (%)</span>
+                    <span className="mono text-[11px] text-muted">
+                      {(effectiveMarketReturn * 100).toFixed(1)}
+                    </span>
+                  </div>
+                  <Input
+                    type="number"
+                    variant="mono"
+                    step={0.1}
+                    placeholder={`auto (${(autoMarketReturn * 100).toFixed(1)}%)`}
+                    value={blMarketReturn !== null ? (blMarketReturn * 100).toFixed(1) : ''}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      setBlMarketReturn(isNaN(v) ? null : v / 100);
+                    }}
+                    className="h-7 text-[12px]"
+                  />
+                </div>
+              </>
             )}
           </div>
 
@@ -688,6 +864,22 @@ export default function OptimizePage() {
             </Card>
           </motion.div>
 
+          {/* B-L: posterior vs implied returns comparison */}
+          {algorithm === 'black_litterman' && blImpliedRets && blPosteriorMu && storeTickers.length > 0 && (
+            <motion.div variants={slideUp}>
+              <Card padding="md">
+                <p className="mb-4 text-[11px] uppercase tracking-[0.06em] text-tertiary">
+                  Expected Returns — Implied vs Posterior
+                </p>
+                <BlReturnsChart
+                  tickers={storeTickers}
+                  implied={blImpliedRets}
+                  posterior={blPosteriorMu}
+                />
+              </Card>
+            </motion.div>
+          )}
+
           {/* Weights + Metrics */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <motion.div variants={slideUp}>
@@ -752,7 +944,7 @@ export default function OptimizePage() {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[10px] uppercase tracking-[0.08em] text-muted">
+    <p className="text-[11px] font-medium text-muted">
       {children}
     </p>
   );
@@ -778,5 +970,164 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
         ].join(' ')}
       />
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Black-Litterman view row component
+// ---------------------------------------------------------------------------
+
+const DIRECTION_OPTIONS = [
+  { value: 'returns',     label: 'will return'   },
+  { value: 'outperforms', label: 'outperforms'   },
+];
+
+function BlViewRow({
+  view,
+  tickers,
+  nAssets,
+  onUpdate,
+  onDelete,
+}: {
+  view: BlViewRow;
+  tickers: string[];
+  nAssets: number;
+  onUpdate: (patch: Partial<BlViewRow>) => void;
+  onDelete: () => void;
+}) {
+  const assetOptions = tickers.length > 0
+    ? tickers.map((t, i) => ({ value: String(i), label: t }))
+    : Array.from({ length: nAssets }, (_, i) => ({ value: String(i), label: `Asset ${i}` }));
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded bg-[var(--bg-hover)] p-2.5">
+      {/* Row 1: asset + direction */}
+      <div className="flex items-center gap-1.5">
+        <Select
+          value={String(view.assetIdx)}
+          onValueChange={(v) => onUpdate({ assetIdx: Number(v) })}
+          options={assetOptions}
+          className="flex-1 h-7 text-[11px]"
+        />
+        <Select
+          value={view.direction}
+          onValueChange={(v) => onUpdate({ direction: v as BlDirection })}
+          options={DIRECTION_OPTIONS}
+          className="flex-1 h-7 text-[11px]"
+        />
+        <button
+          type="button"
+          onClick={onDelete}
+          className="shrink-0 text-tertiary hover:text-loss transition-colors duration-[var(--duration-fast)] text-[13px] leading-none px-1"
+          aria-label="Remove view"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Row 2: target asset (relative view only) + return */}
+      <div className="flex items-center gap-1.5">
+        {view.direction === 'outperforms' && (
+          <Select
+            value={String(view.targetAssetIdx)}
+            onValueChange={(v) => onUpdate({ targetAssetIdx: Number(v) })}
+            options={assetOptions.filter((o) => o.value !== String(view.assetIdx))}
+            className="flex-1 h-7 text-[11px]"
+          />
+        )}
+        <div className="flex items-center gap-1 flex-1">
+          <Input
+            type="number"
+            variant="mono"
+            step={0.5}
+            value={view.expectedReturn}
+            onChange={(e) => onUpdate({ expectedReturn: parseFloat(e.target.value) || 0 })}
+            className="h-7 text-[11px]"
+          />
+          <span className="text-[11px] text-muted shrink-0">%</span>
+        </div>
+      </div>
+
+      {/* Row 3: confidence */}
+      <Slider
+        label={`Confidence: ${Math.round(view.confidence * 100)}%`}
+        value={view.confidence}
+        min={0.05}
+        max={0.95}
+        step={0.05}
+        format={(v) => `${Math.round(v * 100)}%`}
+        onChange={(v) => onUpdate({ confidence: v })}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// B-L posterior vs implied returns chart (pure CSS bars, no D3)
+// ---------------------------------------------------------------------------
+
+function BlReturnsChart({
+  tickers,
+  implied,
+  posterior,
+}: {
+  tickers: string[];
+  implied: Float64Array;
+  posterior: Float64Array;
+}) {
+  const n = tickers.length;
+  // Find max absolute value for normalisation
+  let maxAbs = 1e-12;
+  for (let i = 0; i < n; i++) {
+    maxAbs = Math.max(maxAbs, Math.abs(implied[i] ?? 0), Math.abs(posterior[i] ?? 0));
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Legend */}
+      <div className="flex items-center gap-4 mb-1">
+        <span className="flex items-center gap-1.5 text-[11px] text-muted">
+          <span className="inline-block w-3 h-1.5 rounded-sm bg-[var(--border-strong)]" />
+          Implied
+        </span>
+        <span className="flex items-center gap-1.5 text-[11px] text-muted">
+          <span className="inline-block w-3 h-1.5 rounded-sm bg-accent" />
+          Posterior
+        </span>
+      </div>
+
+      {tickers.map((ticker, i) => {
+        const imp = (implied[i] ?? 0) * 100;
+        const post = (posterior[i] ?? 0) * 100;
+        const impW = Math.abs(implied[i] ?? 0) / maxAbs;
+        const postW = Math.abs(posterior[i] ?? 0) / maxAbs;
+        const postColor = post > imp ? 'var(--gain)' : post < imp ? 'var(--loss)' : 'var(--accent)';
+
+        return (
+          <div key={ticker} className="grid grid-cols-[56px_1fr_52px] items-center gap-2">
+            <span className="mono text-[11px] text-secondary truncate">{ticker}</span>
+            <div className="flex flex-col gap-0.5">
+              {/* Implied bar */}
+              <div className="h-1.5 rounded-sm bg-[var(--bg-subtle)] overflow-hidden">
+                <div
+                  className="h-full rounded-sm bg-[var(--border-strong)]"
+                  style={{ width: `${(impW * 100).toFixed(1)}%` }}
+                />
+              </div>
+              {/* Posterior bar */}
+              <div className="h-1.5 rounded-sm bg-[var(--bg-subtle)] overflow-hidden">
+                <div
+                  className="h-full rounded-sm"
+                  style={{ width: `${(postW * 100).toFixed(1)}%`, background: postColor }}
+                />
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="mono text-[10px] text-muted">{post.toFixed(1)}%</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

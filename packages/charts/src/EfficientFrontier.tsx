@@ -57,7 +57,7 @@ export interface EfficientFrontierProps {
 // ---------------------------------------------------------------------------
 
 const M = { top: 24, right: 32, bottom: 52, left: 64 };
-const HEATMAP_H = 120;
+const HEATMAP_H = 80;
 const HEATMAP_LABEL_W = 44;
 
 const ALGO_LABELS: Record<string, string> = {
@@ -208,7 +208,7 @@ export function EfficientFrontier({
       sel.select('.domain').attr('stroke', 'rgba(255,255,255,0.08)');
       sel.selectAll('.tick line').attr('stroke', 'rgba(255,255,255,0.08)');
       sel.selectAll<SVGTextElement, unknown>('.tick text')
-        .attr('fill', '#525252').attr('font-size', 11);
+        .attr('fill', '#6b6b6b').attr('font-size', 11);
     };
 
     g.append('g')
@@ -223,14 +223,14 @@ export function EfficientFrontier({
     g.append('text')
       .attr('x', iW / 2).attr('y', iH + 44)
       .attr('text-anchor', 'middle')
-      .attr('fill', '#525252').attr('font-size', 12)
+      .attr('fill', '#6b6b6b').attr('font-size', 11)
       .text('Annual Volatility (%)');
 
     g.append('text')
       .attr('transform', 'rotate(-90)')
       .attr('x', -iH / 2).attr('y', -50)
       .attr('text-anchor', 'middle')
-      .attr('fill', '#525252').attr('font-size', 12)
+      .attr('fill', '#6b6b6b').attr('font-size', 11)
       .text('Annual Return (%)');
 
     // ── Capital Market Line ───────────────────────────────────────────────
@@ -258,14 +258,14 @@ export function EfficientFrontier({
         const ay = y(a.ret * 100);
         assetG.append('path')
           .attr('d', diamondPath(ax, ay, 4))
-          .attr('fill', '#373737')
-          .attr('stroke', '#525252')
+          .attr('fill', '#2a2a2a')
+          .attr('stroke', '#4a4a4a')
           .attr('stroke-width', 0.5)
           .attr('pointer-events', 'none');
         assetG.append('text')
           .attr('x', ax + 7)
           .attr('y', ay + 3.5)
-          .attr('fill', '#525252')
+          .attr('fill', '#6b6b6b')
           .attr('font-size', 10)
           .text(a.ticker);
       });
@@ -301,7 +301,7 @@ export function EfficientFrontier({
       .attr('class', 'dot')
       .attr('cx', (p) => x(p.risk   * 100))
       .attr('cy', (p) => y(p.return * 100))
-      .attr('r', 3)
+      .attr('r', 2.5)
       .attr('fill', '#737373')
       .attr('stroke', 'none')
       .attr('pointer-events', 'none');
@@ -385,7 +385,7 @@ export function EfficientFrontier({
         .attr('x', -4)
         .attr('y', i * cellH + cellH / 2 + 3.5)
         .attr('text-anchor', 'end')
-        .attr('fill', '#525252')
+        .attr('fill', '#6b6b6b')
         .attr('font-size', 9.5)
         .attr('font-family', 'var(--font-mono, monospace)')
         .text(t);

@@ -16,6 +16,7 @@ import {
   runBacktestStatic,
   runBacktestWalkforward,
   runMonteCarlo,
+  solveBlackLitterman,
   solveCvar,
   solveFrontier,
   solveHrp,
@@ -88,6 +89,28 @@ async function dispatch(method: string, payload: unknown): Promise<unknown> {
           ub: number;
         };
       return solveCvar(returns, nPeriods, nAssets, alpha, longOnly, lb, ub);
+    }
+    case 'solveBlackLitterman': {
+      const {
+        cov, nAssets, marketWeights, rf, marketReturn,
+        views, tau, longOnly, lb, ub, nPts,
+      } = payload as {
+        cov: Float64Array;
+        nAssets: number;
+        marketWeights: Float64Array;
+        rf: number;
+        marketReturn: number;
+        views: Parameters<typeof solveBlackLitterman>[5];
+        tau: number;
+        longOnly: boolean;
+        lb: number;
+        ub: number;
+        nPts: number;
+      };
+      return solveBlackLitterman(
+        cov, nAssets, marketWeights, rf, marketReturn,
+        views, tau, longOnly, lb, ub, nPts,
+      );
     }
     case 'solveRobust': {
       const { returns, nPeriods, nAssets, gamma, longOnly, lb, ub, ppy } =

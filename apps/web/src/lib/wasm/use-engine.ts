@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type {
   BacktestResult,
+  BlackLittermanResult,
   BootstrapResult,
   EngineMethod,
   FrontierResult,
@@ -21,6 +22,7 @@ import type {
   MonteCarloResult,
   RiskMetrics,
   SolveFrontierParams,
+  ViewInput,
   WalkforwardConfig,
   WalkforwardResult,
   WorkerRequest,
@@ -149,6 +151,20 @@ export interface EngineAPI {
     ppy?: number,
   ): Promise<Float64Array>;
 
+  solveBlackLitterman(
+    cov: Float64Array,
+    nAssets: number,
+    marketWeights: Float64Array,
+    rf: number,
+    marketReturn: number,
+    views: ViewInput[],
+    tau: number,
+    longOnly: boolean,
+    lb: number,
+    ub: number,
+    nPts: number,
+  ): Promise<BlackLittermanResult>;
+
   runMonteCarlo(params: MonteCarloParams): Promise<MonteCarloResult>;
 
   runBacktestStatic(
@@ -251,6 +267,24 @@ export function useEngine(): EngineAPI {
           lb,
           ub,
           ppy,
+        }),
+      [],
+    ),
+
+    solveBlackLitterman: useCallback(
+      (cov, nAssets, marketWeights, rf, marketReturn, views, tau, longOnly, lb, ub, nPts) =>
+        call<BlackLittermanResult>('solveBlackLitterman', {
+          cov,
+          nAssets,
+          marketWeights,
+          rf,
+          marketReturn,
+          views,
+          tau,
+          longOnly,
+          lb,
+          ub,
+          nPts,
         }),
       [],
     ),

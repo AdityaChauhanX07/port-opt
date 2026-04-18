@@ -30,17 +30,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="hidden lg:flex h-full flex-col overflow-hidden">
         {/* ── Top bar ─────────────────────────────────────────────────── */}
         <header
-          className="flex h-12 shrink-0 items-center justify-between px-4 hairline-b"
+          className="flex h-11 shrink-0 items-center justify-between px-4 hairline-b"
           style={{ background: 'var(--bg)' }}
         >
-          <div className="flex items-center gap-3">
-            <span className="text-[14px] font-medium tracking-tight text-primary select-none">
-              PortOpt
-            </span>
-            <span className="mono text-[10px] uppercase tracking-widest text-muted">
-              Beta
-            </span>
-          </div>
+          <span className="text-[14px] font-semibold tracking-tight text-primary select-none">
+            PortOpt
+          </span>
 
           <button
             className="flex h-7 w-7 items-center justify-center rounded text-tertiary hover:text-primary hover:bg-[var(--bg-hover)] transition-colors duration-[var(--duration-fast)] focus:outline-none"
@@ -62,7 +57,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
                 className="h-full"
               >
                 {children}
@@ -80,28 +75,34 @@ function SideNav() {
 
   return (
     <nav
-      className="flex w-[200px] shrink-0 flex-col overflow-y-auto hairline-r py-2"
+      className="flex w-[180px] shrink-0 flex-col overflow-y-auto hairline-r"
       style={{ background: 'var(--bg)' }}
       aria-label="Main navigation"
     >
-      {NAV_ITEMS.map(({ href, label }) => {
-        const active = pathname === href || pathname.startsWith(href + '/');
-        return (
-          <Link
-            key={href}
-            href={href}
-            className={[
-              'relative flex h-8 items-center px-3 text-[13px]',
-              'transition-colors duration-[var(--duration-fast)]',
-              active
-                ? 'text-primary before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-r before:bg-accent'
-                : 'text-secondary hover:text-primary hover:bg-[var(--bg-hover)]',
-            ].join(' ')}
-          >
-            {label}
-          </Link>
-        );
-      })}
+      <div className="flex-1 py-2">
+        {NAV_ITEMS.map(({ href, label }) => {
+          const active = pathname === href || pathname.startsWith(href + '/');
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={[
+                'flex h-[30px] items-center px-[10px] text-[13px] rounded-sm mx-1',
+                'transition-colors duration-[var(--duration-fast)]',
+                active
+                  ? 'text-primary bg-[var(--bg-hover)]'
+                  : 'text-secondary hover:text-primary hover:bg-[var(--bg-hover)]',
+              ].join(' ')}
+            >
+              {label}
+            </Link>
+          );
+        })}
+      </div>
+
+      <div className="hairline-t px-[10px] py-3">
+        <span className="text-[11px] text-muted select-none">⌘K to search</span>
+      </div>
     </nav>
   );
 }

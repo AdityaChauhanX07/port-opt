@@ -49,7 +49,7 @@ export interface PortfolioState {
 
   // ---------- Optimisation (computed by WASM) ----------
   frontier: FrontierState | null;
-  activeAlgorithm: 'markowitz' | 'hrp' | 'risk_parity' | 'cvar' | 'robust';
+  activeAlgorithm: 'markowitz' | 'hrp' | 'risk_parity' | 'cvar' | 'robust' | 'black_litterman';
   currentWeights: Float64Array | null;
   isOptimizing: boolean;
   algorithmCache: Record<string, AlgorithmCacheEntry>;
@@ -86,7 +86,7 @@ export interface PortfolioState {
   }) => void;
   setFrontier: (f: FrontierState | null) => void;
   setWeights: (w: Float64Array) => void;
-  setActiveAlgorithm: (a: PortfolioState['activeAlgorithm']) => void;
+  setActiveAlgorithm(a: PortfolioState['activeAlgorithm']): void;
   setOptimizing: (b: boolean) => void;
   setCachedAlgorithm: (name: string, entry: AlgorithmCacheEntry) => void;
   clearAlgorithmCache: () => void;

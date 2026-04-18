@@ -16,7 +16,7 @@ use engine::{
         bootstrap::sharpe_ci,
         gbm::{simulate, summarize_terminal, GbmParams},
     },
-    optimize::{self, hrp, risk_parity},
+    optimize::{self, hrp, risk_parity, black_litterman},
     risk::{historical_var_cvar, rolling_sharpe, rolling_sortino},
     stats::{annualize, correlation, max_drawdown, ann_return_vol, cagr},
 };
@@ -564,4 +564,104 @@ pub fn bootstrap_sharpe(
         hi   = fmt(result.ci_upper),
         n    = result.samples.len(),
     )
+}
+
+// ---------------------------------------------------------------------------
+// Black-Litterman
+// ---------------------------------------------------------------------------
+
+/// Black-Litterman model: blend equilibrium returns with investor views.
+///
+/// `cov_flat`: N×N annualised covariance matrix, row-major.
+/// `market_weights_flat`: N-vector of market-cap or equal weights.
+/// `views_packed`: encoded view array:
+///   `[n_views, per view: n_picks, idx_0, w_0, …, expected_return, confidence, …]`
+/// `n_pts`: number of frontier portfolios to trace.
+///
+/// Returns JSON:
+/// `{"weights":[…],"risks":[…],"returns":[…],"sharpes":[…],"best_idx":int|null,
+///   "n_portfolios":int,"n_assets":int,"implied_returns":[…],"posterior_mu":[…]}`
+#[wasm_bindgen]
+pub fn solve_black_litterman(
+    cov_flat: Vec<f64>,
+    n_assets: usize,
+    market_weights_flat: Vec<f64>,
+    rf: f64,
+    market_return: f64,
+    views_packed: Vec<f64>,
+    tau: f64,
+    long_only: bool,
+    lb: f64,
+    ub: f64,
+    n_pts: usize,
+) -> String {
+    // Parse covariance matrix.
+    let cov = match flat_to_matrix(&cov_flat, n_assets, n_assets) {
+        Ok(m) => m,
+        Err(e) => return err_json(&e),
+    };
+
+    // Parse market weights.
+    if market_weights_flat.len() != n_assets {
+        return err_json(&format!(
+            "market_weights length {} != n_assets {n_assets}",
+            market_weights_flat.len()
+        ));
+    }
+    let market_weights = DVector::from_vec(market_weights_flat);
+
+    // Parse views from packed format.
+    let views = if views_packed.is_empty() {
+        Vec::new()
+    } else {
+        match black_litterman::parse_views_packed(&views_packed, n_assets) {
+            Ok((v, _)) => v,
+            Err(e) => return err_json(&e),
+        }
+    };
+
+    // Run Black-Litterman solver.
+    match black_litterman::solve(
+        &cov,
+        &market_weights,
+        rf,
+        market_return,
+        &views,
+        tau,
+        long_only,
+        lb,
+        ub,
+        n_pts,
+    ) {
+        Err(e) => err_json(&e.to_string()),
+        Ok(bl) => {
+            let fr = &bl.frontier;
+            let k  = fr.weights.nrows();
+            let n  = fr.weights.ncols();
+            let mut w_flat = Vec::with_capacity(k * n);
+            for r in 0..k {
+                for c in 0..n {
+                    w_flat.push(fr.weights[(r, c)]);
+                }
+            }
+            let best_idx = fr
+                .best_idx
+                .map(|i| i.to_string())
+                .unwrap_or_else(|| "null".to_string());
+
+            format!(
+                "{{\"weights\":{w},\"risks\":{r},\"returns\":{ret},\
+                 \"sharpes\":{s},\"best_idx\":{bi},\
+                 \"n_portfolios\":{k},\"n_assets\":{n},\
+                 \"implied_returns\":{ir},\"posterior_mu\":{pm}}}",
+                w   = vec_to_json(&w_flat),
+                r   = vec_to_json(fr.risks.as_slice()),
+                ret = vec_to_json(fr.returns.as_slice()),
+                s   = vec_to_json(fr.sharpes.as_slice()),
+                bi  = best_idx,
+                ir  = vec_to_json(bl.implied_returns.as_slice()),
+                pm  = vec_to_json(bl.posterior_mu.as_slice()),
+            )
+        }
+    }
 }

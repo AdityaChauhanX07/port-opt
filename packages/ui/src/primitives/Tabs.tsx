@@ -34,14 +34,14 @@ export function Tabs({ tabs, value, onValueChange, children, className = '' }: T
 
 function TabsList({ tabs }: { tabs: Tab[] }) {
   return (
-    <RadixTabs.List className="flex items-end border-b border-[var(--border)] gap-0">
+    <RadixTabs.List className="flex items-end border-b border-[var(--border)] gap-1">
       {tabs.map((tab) => (
         <RadixTabs.Trigger
           key={tab.value}
           value={tab.value}
           className={[
             'relative px-3 pb-2 pt-1',
-            'text-[13px] font-medium text-secondary',
+            'text-[12px] font-medium text-secondary',
             'transition-[color,border-color] duration-[var(--duration)]',
             'hover:text-primary',
             'outline-none select-none whitespace-nowrap',

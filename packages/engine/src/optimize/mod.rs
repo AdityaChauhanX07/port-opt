@@ -1,3 +1,4 @@
+pub mod black_litterman;
 pub mod cvar;
 pub mod frontier;
 pub mod hrp;

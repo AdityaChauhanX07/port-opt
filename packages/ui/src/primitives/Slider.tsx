@@ -55,17 +55,17 @@ export function Slider({
         onValueChange={handleValueChange}
         className="relative flex items-center select-none touch-none w-full h-4"
       >
-        <RadixSlider.Track className="relative bg-subtle rounded-full h-1 w-full grow overflow-hidden">
-          <RadixSlider.Range className="absolute h-full bg-accent rounded-full" />
+        <RadixSlider.Track className="relative bg-[var(--border-strong)] rounded-full h-0.5 w-full grow overflow-hidden">
+          <RadixSlider.Range className="absolute h-full bg-accent/60 rounded-full" />
         </RadixSlider.Track>
 
         <RadixSlider.Thumb
           className={[
-            'block w-3.5 h-3.5 rounded-full bg-primary border border-[var(--border-strong)]',
-            'transition-[box-shadow] duration-[var(--duration-fast)]',
-            'hover:shadow-[0_0_0_4px_var(--accent-subtle)]',
-            'focus:outline-none focus:shadow-[0_0_0_4px_var(--accent-subtle)]',
-            'active:shadow-[0_0_0_4px_var(--accent-subtle)]',
+            'block w-3 h-3 rounded-full bg-primary',
+            'transition-[width,height,box-shadow] duration-[var(--duration-fast)]',
+            'hover:w-3.5 hover:h-3.5 hover:shadow-[0_0_0_3px_var(--accent-subtle)]',
+            'focus:outline-none focus:shadow-[0_0_0_3px_var(--accent-subtle)]',
+            'active:shadow-[0_0_0_3px_var(--accent-subtle)]',
           ].join(' ')}
           aria-label={label}
         />

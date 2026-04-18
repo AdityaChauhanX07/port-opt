@@ -62,17 +62,11 @@ body {
   transition: outline-offset 0.1s ease;
 }
 
-/* ── Skeleton loading ────────────────────────────────────────────────── */
-
-@keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.5; }
-  50%       { opacity: 1;   }
-}
+/* ── Skeleton loading — static, no animation (Linear style) ─────────── */
 
 .skeleton {
-  background: var(--bg-hover);
+  background: var(--bg-subtle);
   border-radius: 4px;
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
 
 /* ── No scrollbar ────────────────────────────────────────────────────── */

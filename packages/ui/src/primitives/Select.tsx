@@ -41,7 +41,7 @@ export function Select({
       <RadixSelect.Trigger
         className={[
           'inline-flex items-center justify-between gap-2',
-          'h-8 px-3 rounded border border-[var(--border)] bg-elevated',
+          'h-8 px-3 rounded border border-transparent bg-inset',
           'text-[13px] text-primary',
           'outline-none transition-[border-color] duration-[var(--duration)]',
           'focus:border-[var(--border-focus)]',

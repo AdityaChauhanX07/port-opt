@@ -96,6 +96,26 @@ export interface SolveFrontierParams {
   ppy: number;
 }
 
+/** A single investor view for the Black-Litterman model. */
+export interface ViewInput {
+  /** Asset index in the universe (0-based). */
+  assetIndices: number[];
+  /** Pick weights: +1 for long/absolute, -1 for short side of relative view. */
+  weights: number[];
+  /** Expected return, annualised (e.g. 0.15 = 15%). */
+  expectedReturn: number;
+  /** Confidence in [0, 1). */
+  confidence: number;
+}
+
+/** Black-Litterman result: extends FrontierResult with BL diagnostics. */
+export interface BlackLittermanResult extends FrontierResult {
+  /** Market-implied equilibrium returns π = δ·Σ·w_mkt, length = nAssets. */
+  impliedReturns: Float64Array;
+  /** Posterior expected returns μ_BL, length = nAssets. */
+  posteriorMu: Float64Array;
+}
+
 // ---------------------------------------------------------------------------
 // Worker message protocol
 // ---------------------------------------------------------------------------
@@ -106,6 +126,7 @@ export type EngineMethod =
   | 'solveRiskParity'
   | 'solveCvar'
   | 'solveRobust'
+  | 'solveBlackLitterman'
   | 'runMonteCarlo'
   | 'runBacktestStatic'
   | 'runBacktestWalkforward'

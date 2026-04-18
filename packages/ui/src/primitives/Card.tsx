@@ -21,7 +21,7 @@ export function Card({
       ? 'border-[var(--border)] hover:border-[var(--border-strong)] transition-colors duration-[var(--duration)]'
       : 'border-[var(--border)]';
   const padClass =
-    padding === 'none' ? '' : padding === 'sm' ? 'p-4' : 'p-6';
+    padding === 'none' ? '' : padding === 'sm' ? 'p-4' : 'p-5';
 
   return (
     <div className={`${base} ${borderClass} ${padClass} ${className}`}>
