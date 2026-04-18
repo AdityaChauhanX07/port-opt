@@ -276,23 +276,14 @@ function MetricCard({
 // ---------------------------------------------------------------------------
 
 export default function RiskPage() {
-  const {
-    returns,
-    nPeriods,
-    nAssets,
-    tickers,
-    dates,
-    frequency,
-    currentWeights,
-  } = usePortfolioStore((s) => ({
-    returns:        s.returns,
-    nPeriods:       s.nPeriods,
-    nAssets:        s.nAssets,
-    tickers:        s.tickers,
-    dates:          s.dates,
-    frequency:      s.frequency,
-    currentWeights: s.currentWeights,
-  }));
+  const store          = usePortfolioStore();
+  const returns        = store.returns;
+  const nPeriods       = store.nPeriods;
+  const nAssets        = store.nAssets;
+  const tickers        = store.tickers;
+  const dates          = store.dates;
+  const frequency      = store.frequency;
+  const currentWeights = store.currentWeights;
 
   const {
     mcResult, isMcRunning, mcError,
@@ -330,6 +321,8 @@ export default function RiskPage() {
   // ── Derived quantities ────────────────────────────────────────────────────
 
   const ppy = PPY_MAP[frequency];
+  // Returns have T-1 rows; nPeriods from the store counts price rows (T).
+  const nRetPeriods = returns && nAssets > 0 ? Math.floor(returns.length / nAssets) : 0;
 
   const portRet = useMemo(() => {
     if (!returns || !currentWeights || nAssets < 1) return null;
@@ -428,11 +421,11 @@ export default function RiskPage() {
   // ── Correlation matrix (async WASM) ───────────────────────────────────────
 
   useEffect(() => {
-    if (!returns || !nPeriods || !nAssets || corrMatrix) return;
+    if (!returns || !nRetPeriods || !nAssets || corrMatrix) return;
     setCorrLoading(true);
     setCorrError(null);
     engine
-      .computeCorrelation(returns, nPeriods, nAssets)
+      .computeCorrelation(returns, nRetPeriods, nAssets)
       .then((m) => {
         setCorrMatrix(m as Float64Array);
         setCorrLoading(false);
@@ -441,7 +434,7 @@ export default function RiskPage() {
         setCorrError(e instanceof Error ? e.message : String(e));
         setCorrLoading(false);
       });
-  }, [returns, nPeriods, nAssets, corrMatrix, engine, setCorrMatrix, setCorrLoading, setCorrError]);
+  }, [returns, nRetPeriods, nAssets, corrMatrix, engine, setCorrMatrix, setCorrLoading, setCorrError]);
 
   // ── Monte Carlo ──────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback } from 'react';
 import * as RadixSlider from '@radix-ui/react-slider';
 
 interface SliderProps {
@@ -22,8 +22,21 @@ export function Slider({
   format,
   onChange,
 }: SliderProps) {
-  const [dragging, setDragging] = useState(false);
   const displayValue = format ? format(value) : String(value);
+
+  // Equality guard: don't call onChange if Radix emits the same value (floating-
+  // point snap on initial mount). Without this guard the controlled value → snap
+  // → setState → re-render cycle repeats until React throws "Maximum update depth
+  // exceeded" via @radix-ui/react-compose-refs.
+  const handleValueChange = useCallback(
+    (vals: number[]) => {
+      const newVal = vals[0];
+      if (newVal !== undefined && newVal !== value) {
+        onChange(newVal);
+      }
+    },
+    [value, onChange],
+  );
 
   return (
     <div className="space-y-2">
@@ -39,9 +52,7 @@ export function Slider({
         max={max}
         step={step}
         value={[value]}
-        onValueChange={([v]) => onChange(v)}
-        onPointerDown={() => setDragging(true)}
-        onPointerUp={() => setDragging(false)}
+        onValueChange={handleValueChange}
         className="relative flex items-center select-none touch-none w-full h-4"
       >
         <RadixSlider.Track className="relative bg-subtle rounded-full h-1 w-full grow overflow-hidden">
@@ -54,7 +65,7 @@ export function Slider({
             'transition-[box-shadow] duration-[var(--duration-fast)]',
             'hover:shadow-[0_0_0_4px_var(--accent-subtle)]',
             'focus:outline-none focus:shadow-[0_0_0_4px_var(--accent-subtle)]',
-            dragging ? 'shadow-[0_0_0_4px_var(--accent-subtle)]' : '',
+            'active:shadow-[0_0_0_4px_var(--accent-subtle)]',
           ].join(' ')}
           aria-label={label}
         />

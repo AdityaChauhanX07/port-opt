@@ -182,11 +182,12 @@ pub fn solve_risk_parity(cov_flat: Vec<f64>, n: usize, lb: f64, ub: f64) -> Stri
     }
 }
 
-/// Minimise CVaR at confidence `alpha` (Clarabel LP).
+/// Minimise CVaR at confidence `alpha`.
 ///
-/// Returns `{"error":"..."}` on WASM targets — Clarabel is not compiled for WASM.
+/// Native: uses Clarabel LP solver.
+/// WASM:   uses projected subgradient descent (no Clarabel dependency).
 ///
-/// Returns JSON: `{"weights":[...]}` on native targets.
+/// Returns JSON: `{"weights":[...]}` or `{"error":"..."}`.
 #[wasm_bindgen]
 pub fn solve_cvar(
     returns_flat: Vec<f64>,
@@ -207,11 +208,12 @@ pub fn solve_cvar(
     }
 }
 
-/// Robust MVO via SOCP (Clarabel).
+/// Robust mean–variance optimisation with ellipsoidal return uncertainty.
 ///
-/// Returns `{"error":"..."}` on WASM targets — Clarabel is not compiled for WASM.
+/// Native: uses Clarabel SOCP solver.
+/// WASM:   uses projected gradient descent (no Clarabel dependency).
 ///
-/// Returns JSON: `{"weights":[...]}` on native targets.
+/// Returns JSON: `{"weights":[...]}` or `{"error":"..."}`.
 #[wasm_bindgen]
 pub fn solve_robust(
     returns_flat: Vec<f64>,

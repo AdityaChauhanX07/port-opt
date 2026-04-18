@@ -185,7 +185,7 @@ const INITIAL: Omit<
   longOnly: true,
   lb: 0,
   ub: 1,
-  rf: 0,
+  rf: 0.03,
   shrinkageAlpha: 0.1,
   nPoints: 20,
 };

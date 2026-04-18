@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import * as RadixSelect from '@radix-ui/react-select';
 
 interface SelectOption {
@@ -25,10 +25,17 @@ export function Select({
   disabled = false,
   className = '',
 }: SelectProps) {
+  const handleValueChange = useCallback(
+    (v: string) => {
+      if (v !== value) onValueChange(v);
+    },
+    [value, onValueChange],
+  );
+
   return (
     <RadixSelect.Root
       value={value}
-      onValueChange={onValueChange}
+      onValueChange={handleValueChange}
       disabled={disabled}
     >
       <RadixSelect.Trigger

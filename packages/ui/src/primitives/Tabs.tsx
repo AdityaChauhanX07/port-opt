@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import * as RadixTabs from '@radix-ui/react-tabs';
 
 interface Tab {
@@ -17,8 +17,15 @@ interface TabsProps {
 }
 
 export function Tabs({ tabs, value, onValueChange, children, className = '' }: TabsProps) {
+  const handleValueChange = useCallback(
+    (v: string) => {
+      if (v !== value) onValueChange(v);
+    },
+    [value, onValueChange],
+  );
+
   return (
-    <RadixTabs.Root value={value} onValueChange={onValueChange} className={className}>
+    <RadixTabs.Root value={value} onValueChange={handleValueChange} className={className}>
       <TabsList tabs={tabs} />
       {children}
     </RadixTabs.Root>

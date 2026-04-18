@@ -264,16 +264,14 @@ function AnnualBar({ year, ret }: { year: string; ret: number }) {
 // ---------------------------------------------------------------------------
 
 export default function BacktestPage() {
-  const { returns, nPeriods, nAssets, tickers, dates, frequency, currentWeights } =
-    usePortfolioStore((s) => ({
-      returns:        s.returns,
-      nPeriods:       s.nPeriods,
-      nAssets:        s.nAssets,
-      tickers:        s.tickers,
-      dates:          s.dates,
-      frequency:      s.frequency,
-      currentWeights: s.currentWeights,
-    }));
+  const store          = usePortfolioStore();
+  const returns        = store.returns;
+  const nPeriods       = store.nPeriods;
+  const nAssets        = store.nAssets;
+  const tickers        = store.tickers;
+  const dates          = store.dates;
+  const frequency      = store.frequency;
+  const currentWeights = store.currentWeights;
 
   const {
     config, result, resultMode, isRunning, error,
@@ -300,11 +298,13 @@ export default function BacktestPage() {
 
   const hasData = returns !== null && nPeriods > 1;
   const ppy     = annFactor(frequency);
+  // Returns have T-1 rows; nPeriods from the store counts price rows (T).
+  const nRetPeriods = returns && nAssets > 0 ? Math.floor(returns.length / nAssets) : 0;
 
   // ── Run backtest ──────────────────────────────────────────────────────────
 
   const runBacktest = useCallback(async () => {
-    if (!returns || nPeriods < 2 || nAssets < 1) return;
+    if (!returns || nRetPeriods < 2 || nAssets < 1) return;
     setRunning(true);
     setError(null);
     // Reset analytics state when re-running
@@ -314,11 +314,11 @@ export default function BacktestPage() {
       if (config.mode === 'static') {
         const weights = currentWeights ?? new Float64Array(nAssets).fill(1 / nAssets);
         const res = await engine.runBacktestStatic(
-          returns, nPeriods, nAssets, weights, config.benchmarks.ew,
+          returns, nRetPeriods, nAssets, weights, config.benchmarks.ew,
         );
         setResult(res, 'static');
       } else {
-        const res = await engine.runBacktestWalkforward(returns, nPeriods, nAssets, {
+        const res = await engine.runBacktestWalkforward(returns, nRetPeriods, nAssets, {
           window:       config.window,
           step:         config.step,
           tc_bps:       config.tcBps,
@@ -333,7 +333,7 @@ export default function BacktestPage() {
     } finally {
       setRunning(false);
     }
-  }, [returns, nPeriods, nAssets, config, currentWeights, ppy, engine, setRunning, setError, setResult]);
+  }, [returns, nRetPeriods, nAssets, config, currentWeights, ppy, engine, setRunning, setError, setResult]);
 
   // ── Run bootstrap ─────────────────────────────────────────────────────────
 

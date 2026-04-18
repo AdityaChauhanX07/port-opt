@@ -250,6 +250,8 @@ export default function OptimizePage() {
   const engine = useEngine();
   const ppy    = PPY[frequency] ?? 252;
   const hasData = nPeriods > 0 && !!returns;
+  // Returns have T-1 rows; nPeriods from the store counts price rows (T).
+  const nRetPeriods = returns && nAssets > 0 ? Math.floor(returns.length / nAssets) : 0;
 
   // ── Derived chart points ──────────────────────────────────────────────────
   const chartPoints = useMemo<FrontierPoint[]>(() => {
@@ -261,9 +263,9 @@ export default function OptimizePage() {
         weights: Array.from(frontier.weights.slice(i * nAssets, (i + 1) * nAssets)),
       }));
     }
-    if (currentWeights && returns && nPeriods > 0) {
+    if (currentWeights && returns && nRetPeriods > 0) {
       const w = Array.from(currentWeights);
-      const s = portfolioStats(returns, nPeriods, nAssets, w, rf, ppy);
+      const s = portfolioStats(returns, nRetPeriods, nAssets, w, rf, ppy);
       return [{ risk: s.vol, return: s.ret, sharpe: s.sharpe, weights: w }];
     }
     return [];
@@ -271,8 +273,8 @@ export default function OptimizePage() {
 
   // ── Per-asset scatter stats ───────────────────────────────────────────────
   const assetStats = useMemo<AssetStat[]>(() => {
-    if (!returns || nPeriods === 0 || storeTickers.length === 0) return [];
-    return computeAssetStats(returns, nPeriods, nAssets, storeTickers, ppy);
+    if (!returns || nRetPeriods === 0 || storeTickers.length === 0) return [];
+    return computeAssetStats(returns, nRetPeriods, nAssets, storeTickers, ppy);
   }, [returns, nPeriods, nAssets, storeTickers, ppy]);
 
   // ── Algorithm overlay markers ─────────────────────────────────────────────
@@ -356,25 +358,25 @@ export default function OptimizePage() {
         let weights: Float64Array | null = null;
         switch (name as OverlayAlgorithm) {
           case 'hrp': {
-            weights = await engine.solveHrp(returns, nPeriods, nAssets, storeTickers);
+            weights = await engine.solveHrp(returns, nRetPeriods, nAssets, storeTickers);
             break;
           }
           case 'risk_parity': {
-            const cov = computeCovariance(returns, nPeriods, nAssets);
+            const cov = computeCovariance(returns, nRetPeriods, nAssets);
             weights   = await engine.solveRiskParity(cov, nAssets, lb, ub);
             break;
           }
           case 'cvar': {
-            weights = await engine.solveCvar(returns, nPeriods, nAssets, 0.95, longOnly, lb, ub);
+            weights = await engine.solveCvar(returns, nRetPeriods, nAssets, 0.95, longOnly, lb, ub);
             break;
           }
           case 'robust': {
-            weights = await engine.solveRobust(returns, nPeriods, nAssets, 1.0, longOnly, lb, ub, ppy);
+            weights = await engine.solveRobust(returns, nRetPeriods, nAssets, 1.0, longOnly, lb, ub, ppy);
             break;
           }
         }
         if (weights) {
-          const stats = portfolioStats(returns, nPeriods, nAssets, weights, rf, ppy);
+          const stats = portfolioStats(returns, nRetPeriods, nAssets, weights, rf, ppy);
           store.setCachedAlgorithm(name, { weights, vol: stats.vol, ret: stats.ret, sharpe: stats.sharpe });
         }
       } catch {
@@ -398,7 +400,7 @@ export default function OptimizePage() {
     try {
       switch (algorithm) {
         case 'markowitz': {
-          const result = await engine.solveFrontier({ returns, nPeriods, nAssets, nPts: nPoints, longOnly, lb, ub, rf, ppy });
+          const result = await engine.solveFrontier({ returns, nPeriods: nRetPeriods, nAssets, nPts: nPoints, longOnly, lb, ub, rf, ppy });
           store.setFrontier(result);
           if (result.bestIdx != null) {
             store.setWeights(result.weights.slice(result.bestIdx * nAssets, (result.bestIdx + 1) * nAssets));
@@ -406,26 +408,26 @@ export default function OptimizePage() {
           break;
         }
         case 'hrp': {
-          const w = await engine.solveHrp(returns, nPeriods, nAssets, storeTickers);
+          const w = await engine.solveHrp(returns, nRetPeriods, nAssets, storeTickers);
           store.setWeights(w);
           store.setFrontier(null);
           break;
         }
         case 'risk_parity': {
-          const cov = computeCovariance(returns, nPeriods, nAssets);
+          const cov = computeCovariance(returns, nRetPeriods, nAssets);
           const w   = await engine.solveRiskParity(cov, nAssets, lb, ub);
           store.setWeights(w);
           store.setFrontier(null);
           break;
         }
         case 'cvar': {
-          const w = await engine.solveCvar(returns, nPeriods, nAssets, 0.95, longOnly, lb, ub);
+          const w = await engine.solveCvar(returns, nRetPeriods, nAssets, 0.95, longOnly, lb, ub);
           store.setWeights(w);
           store.setFrontier(null);
           break;
         }
         case 'robust': {
-          const w = await engine.solveRobust(returns, nPeriods, nAssets, 1.0, longOnly, lb, ub, ppy);
+          const w = await engine.solveRobust(returns, nRetPeriods, nAssets, 1.0, longOnly, lb, ub, ppy);
           store.setWeights(w);
           store.setFrontier(null);
           break;
