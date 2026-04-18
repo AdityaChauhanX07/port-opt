@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@portopt/charts": "workspace:*",
     "@portopt/three": "workspace:*",
     "@portopt/types": "workspace:*",
