@@ -5,7 +5,6 @@ const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL ?? 'http://localhost:8888'
 
 // ---------------------------------------------------------------------------
 // Shared response shapes (mirrors Python PricesResponse)
-// ---------------------------------------------------------------------------
 
 const PricesResponse = z.object({
   dates: z.array(z.string()),

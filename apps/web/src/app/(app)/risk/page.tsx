@@ -302,6 +302,8 @@ export default function RiskPage() {
     reset: resetRisk,
   } = useRiskStore();
 
+  const trpcUtils = api.useUtils();
+
   const engine = useEngine();
 
   // ── UI state ───────────────────────────────────────────────────────────────
@@ -511,18 +513,11 @@ export default function RiskPage() {
     setIsFactorRunning(true);
     setFactorError(null);
     try {
-      // Fetch factor returns from data service
-      const factorData = await fetch('/api/trpc/data.fetchFactors?' + new URLSearchParams({
-        input: JSON.stringify({
-          start_date: store.dateRange.start,
-          end_date:   store.dateRange.end,
-          frequency:  frequency === 'weekly' ? 'daily' : frequency,
-          model:      factorModel,
-        }),
-      })).then(async (r) => {
-        if (!r.ok) throw new Error(await r.text());
-        const json = await r.json() as { result: { data: { dates: string[]; factor_names: string[]; values: number[] } } };
-        return json.result.data;
+      const factorData = await trpcUtils.data.fetchFactors.fetch({
+        start_date: store.dateRange.start,
+        end_date:   store.dateRange.end,
+        frequency:  frequency === 'weekly' ? 'daily' : frequency,
+        model:      factorModel,
       });
 
       const { dates: factorDates, factor_names, values } = factorData;
@@ -568,7 +563,7 @@ export default function RiskPage() {
     } finally {
       setIsFactorRunning(false);
     }
-  }, [portRet, store.dateRange, frequency, factorModel, equityDates, engine, ppy]);
+  }, [portRet, store.dateRange, frequency, factorModel, equityDates, engine, ppy, trpcUtils]);
 
   // ── Formatters ─────────────────────────────────────────────────────────────
 
@@ -1223,10 +1218,22 @@ export default function RiskPage() {
           >
             {isFactorRunning ? 'Running OLS…' : 'Run Decomposition'}
           </Button>
-          {factorError && (
-            <span className="text-[12px] text-loss max-w-sm">{factorError}</span>
-          )}
         </div>
+
+        {factorError && (
+          <div className="flex items-start justify-between gap-3 rounded-md bg-subtle border border-[var(--border)] px-4 py-3 mb-5">
+            <p className="text-[13px] text-secondary leading-snug">
+              <span className="font-medium text-primary">Factor data unavailable.</span>{' '}
+              {factorError.length < 120 ? factorError : 'The factor returns endpoint could not be reached or returned an error.'}
+            </p>
+            <button
+              onClick={() => setFactorError(null)}
+              className="shrink-0 text-[11px] text-tertiary hover:text-secondary transition-colors duration-[var(--duration)] mt-0.5"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {factorResult ? (
           <>

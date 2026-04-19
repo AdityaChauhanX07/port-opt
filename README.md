@@ -49,8 +49,6 @@ Six optimization approaches, each solving a different version of the allocation 
 
 **AI research.** Ask natural language questions about your portfolio. Claude has your actual weights, metrics, regime state, and stress test results in context. "What is driving my portfolio's risk?" gets a specific, quantitative answer referencing your actual numbers.
 
-**Persistence.** Sign in with GitHub. Save portfolios, reload them later, compare across sessions.
-
 ---
 
 ## Stack
@@ -63,7 +61,6 @@ React Three Fiber              ->  3D correlation globe
 tRPC + Zustand                 ->  Type-safe API + client state
 FastAPI + yfinance             ->  Price data service (Python, only server component)
 Anthropic Claude API           ->  AI portfolio analysis
-NextAuth + Vercel KV           ->  Auth and persistence
 ```
 
 Monorepo managed by Turborepo. Radix UI primitives for accessible components. Framer Motion for transitions. Tailwind for styling.
@@ -107,15 +104,6 @@ For AI analysis, add your Anthropic API key to `apps/web/.env.local`:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
-```
-
-For auth, set up a GitHub OAuth app and add credentials to the same file:
-
-```
-GITHUB_ID=...
-GITHUB_SECRET=...
-NEXTAUTH_SECRET=<any-random-string>
-NEXTAUTH_URL=http://localhost:3000
 ```
 
 ---
