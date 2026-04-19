@@ -9,7 +9,7 @@
 html {
   font-family: var(--font-sans), system-ui, sans-serif;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.57;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -23,36 +23,52 @@ body {
   box-sizing: border-box;
 }
 
-/* ── Utilities ────────────────────────────────────────────────────────── */
+/* ── Type scale ──────────────────────────────────────────────────────── */
+
+.text-display  { font-size: 32px; line-height: 40px; font-weight: 600; letter-spacing: -0.02em; }
+.text-h1       { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.015em; }
+.text-h2       { font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.text-h3       { font-size: 14px; line-height: 20px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+.text-body     { font-size: 14px; line-height: 22px; font-weight: 400; }
+.text-small    { font-size: 13px; line-height: 20px; font-weight: 400; }
+.text-caption  { font-size: 12px; line-height: 16px; font-weight: 400; }
+
+.mono-display  { font-family: var(--font-mono); font-size: 32px; line-height: 40px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.mono-body     { font-family: var(--font-mono); font-size: 14px; line-height: 22px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.mono-small    { font-family: var(--font-mono); font-size: 13px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.mono-caption  { font-family: var(--font-mono); font-size: 12px; line-height: 16px; font-weight: 400; font-variant-numeric: tabular-nums; }
+
+/* ── Semantic color utilities ────────────────────────────────────────── */
+
+.text-primary   { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary  { color: var(--text-tertiary); }
+.text-positive  { color: var(--positive); }
+.text-negative  { color: var(--negative); }
+.border-subtle  { border-color: var(--border-subtle); }
+.surface        { background: var(--surface); }
+.surface-elevated { background: var(--surface-elevated); }
+
+/* ── Legacy utilities (keep pages working during redesign) ────────────── */
 
 .mono {
   font-family: var(--font-mono), 'Courier New', monospace;
   font-variant-numeric: tabular-nums;
 }
 
-.gain {
-  color: var(--gain);
-}
+.gain { color: var(--positive); }
+.loss { color: var(--negative); }
 
-.loss {
-  color: var(--loss);
-}
+.text-gain { color: var(--positive); }
+.text-loss { color: var(--negative); }
+.text-warn { color: var(--warning); }
+.text-accent { color: var(--accent); }
+.text-accent-hover { color: var(--accent-hover); }
 
-.hairline-t {
-  border-top: 1px solid var(--border);
-}
-
-.hairline-b {
-  border-bottom: 1px solid var(--border);
-}
-
-.hairline-l {
-  border-left: 1px solid var(--border);
-}
-
-.hairline-r {
-  border-right: 1px solid var(--border);
-}
+.hairline-t { border-top: 1px solid var(--border); }
+.hairline-b { border-bottom: 1px solid var(--border); }
+.hairline-l { border-left: 1px solid var(--border); }
+.hairline-r { border-right: 1px solid var(--border); }
 
 /* ── Focus ring ──────────────────────────────────────────────────────── */
 
@@ -62,14 +78,14 @@ body {
   transition: outline-offset 0.1s ease;
 }
 
-/* ── Skeleton loading — static, no animation (Linear style) ─────────── */
+/* ── Skeleton ────────────────────────────────────────────────────────── */
 
 .skeleton {
-  background: var(--bg-subtle);
+  background: var(--surface);
   border-radius: 4px;
 }
 
-/* ── No scrollbar ────────────────────────────────────────────────────── */
+/* ── Scrollbar ────────────────────────────────────────────────────────── */
 
 .no-scrollbar {
   scrollbar-width: none;
@@ -79,8 +95,6 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
-
-/* ── Scrollbar ────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
   width: 6px;
@@ -97,5 +111,5 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: var(--text-tertiary);
 }

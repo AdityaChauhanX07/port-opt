@@ -10,17 +10,17 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
 ) {
   const monoClass =
     variant === 'mono' || props.type === 'number'
-      ? 'font-mono font-[var(--font-mono)] [font-variant-numeric:tabular-nums]'
+      ? 'font-mono [font-variant-numeric:tabular-nums]'
       : '';
 
   return (
     <input
       ref={ref}
       className={[
-        'h-8 w-full rounded bg-inset border border-transparent px-3',
-        'text-[13px] text-primary placeholder:text-muted',
-        'outline-none transition-[border-color] duration-[var(--duration)]',
-        'focus:border-[var(--border-focus)]',
+        'h-9 w-full rounded border border-[var(--border)] bg-[var(--bg)] px-3',
+        'text-[13px] text-primary placeholder:text-tertiary',
+        'outline-none transition-[border-color] duration-[var(--duration-micro)] ease-[var(--ease)]',
+        'focus:border-[var(--border-strong)]',
         'disabled:opacity-40 disabled:cursor-not-allowed',
         monoClass,
         className,

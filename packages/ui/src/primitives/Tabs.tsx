@@ -34,24 +34,22 @@ export function Tabs({ tabs, value, onValueChange, children, className = '' }: T
 
 function TabsList({ tabs }: { tabs: Tab[] }) {
   return (
-    <RadixTabs.List className="flex items-end border-b border-[var(--border)] gap-1">
+    <RadixTabs.List className="flex items-end border-b border-[var(--border-subtle)]">
       {tabs.map((tab) => (
         <RadixTabs.Trigger
           key={tab.value}
           value={tab.value}
           className={[
             'relative px-3 pb-2 pt-1',
-            'text-[12px] font-medium text-secondary',
-            'transition-[color,border-color] duration-[var(--duration)]',
+            'text-[13px] font-medium text-secondary',
+            'transition-colors duration-[var(--duration-micro)] ease-[var(--ease)]',
             'hover:text-primary',
             'outline-none select-none whitespace-nowrap',
-            // Active underline via pseudo-element using box-shadow
             'data-[state=active]:text-primary',
-            'data-[state=active]:after:absolute data-[state=active]:after:bottom-0',
-            'data-[state=active]:after:left-0 data-[state=active]:after:right-0',
-            'data-[state=active]:after:h-px data-[state=active]:after:bg-accent',
-            'after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:content-[""]',
-            'after:transition-colors after:duration-[var(--duration)]',
+            // 2px underline for active state
+            'after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:content-[""]',
+            'after:transition-[background-color] after:duration-[var(--duration-micro)]',
+            'after:bg-transparent data-[state=active]:after:bg-accent',
           ].join(' ')}
         >
           {tab.label}

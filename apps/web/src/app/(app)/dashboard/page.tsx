@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { TrendingUp, LineChart, ShieldAlert, ArrowRight, type LucideIcon } from 'lucide-react';
+import { MetricCard } from '@portopt/ui';
 import { api } from '@/lib/trpc/client';
 import { usePortfolioStore } from '@/lib/stores/portfolio';
-import { useBacktestStore } from '@/lib/stores/backtest';
 import { slideUp, stagger } from '@/lib/motion';
 
 // ---------------------------------------------------------------------------
@@ -19,48 +20,178 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-function fmtNum(v: number | null | undefined, digits = 2): string {
-  if (v == null || !isFinite(v)) return '—';
-  return v.toFixed(digits);
-}
-
 const ALGO_LABELS: Record<string, string> = {
-  markowitz: 'Markowitz',
-  hrp: 'HRP',
-  risk_parity: 'Risk Parity',
-  cvar: 'CVaR',
-  robust: 'Robust MVO',
+  markowitz:       'Markowitz',
+  hrp:             'HRP',
+  risk_parity:     'Risk Parity',
+  cvar:            'CVaR',
+  robust:          'Robust MVO',
+  black_litterman: 'Black-Litterman',
 };
 
 // ---------------------------------------------------------------------------
-// Sparkline
+// Sparkline — 1px stroke, fills cell width
 // ---------------------------------------------------------------------------
 
 function Sparkline({ values, positive }: { values: number[]; positive: boolean }) {
-  if (values.length < 2) return null;
+  if (values.length < 2) return <div style={{ height: 40 }} />;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
-  const W = 64, H = 24;
+  const W = 100;
+  const H = 40;
   const pts = values
     .map((v, i) => {
       const x = (i / (values.length - 1)) * W;
-      const y = H - ((v - min) / range) * H;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
+      const y = H - ((v - min) / range) * (H - 4) - 2;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(' ');
 
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true" className="shrink-0">
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      style={{ width: '100%', height: 40, display: 'block' }}
+      aria-hidden="true"
+    >
       <polyline
         points={pts}
         fill="none"
-        stroke={positive ? 'var(--gain)' : 'var(--loss)'}
-        strokeWidth={1.5}
+        stroke={positive ? 'var(--positive)' : 'var(--negative)'}
+        strokeWidth={1}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Market snapshot grid
+// ---------------------------------------------------------------------------
+
+interface SnapshotItem {
+  ticker: string;
+  price: number;
+  change_pct: number;
+  sparkline: number[];
+}
+
+function SnapshotCell({ item, last }: { item: SnapshotItem; last: boolean }) {
+  const pos = item.change_pct >= 0;
+  return (
+    <div
+      style={{
+        flex: 1,
+        padding: '12px 16px',
+        borderRight: last ? 'none' : '1px solid var(--border-subtle)',
+        minWidth: 0,
+      }}
+    >
+      {/* Top row: ticker + change */}
+      <div className="flex items-center justify-between mb-1">
+        <span
+          className="text-[13px] text-primary"
+          style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {item.ticker}
+        </span>
+        <span
+          className="text-[12px]"
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontVariantNumeric: 'tabular-nums',
+            color: pos ? 'var(--positive)' : 'var(--negative)',
+          }}
+        >
+          {pos ? '+' : ''}{item.change_pct.toFixed(2)}%
+        </span>
+      </div>
+
+      {/* Sparkline */}
+      <Sparkline values={item.sparkline} positive={pos} />
+
+      {/* Price */}
+      <div className="mt-1">
+        <span
+          className="text-[13px] text-primary"
+          style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {item.price.toFixed(2)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SnapshotCellSkeleton({ last }: { last: boolean }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        padding: '12px 16px',
+        borderRight: last ? 'none' : '1px solid var(--border-subtle)',
+      }}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="skeleton h-3 w-10 rounded" />
+        <div className="skeleton h-3 w-12 rounded" />
+      </div>
+      <div className="skeleton rounded" style={{ height: 40, width: '100%', marginBottom: 6 }} />
+      <div className="skeleton h-3 w-14 rounded" />
+    </div>
+  );
+}
+
+function MarketSnapshot() {
+  const { data, isLoading, error } = api.data.marketSnapshot.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+
+  if (error) {
+    return (
+      <p className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
+        Market data unavailable
+      </p>
+    );
+  }
+
+  const items = data ?? [];
+  // Show first 8 items, 4-up per row
+  const visible = items.slice(0, 8);
+
+  return (
+    <div>
+      {/* Row 1 */}
+      <div
+        style={{
+          display: 'flex',
+          borderBottom: visible.length > 4 ? '1px solid var(--border-subtle)' : 'none',
+        }}
+      >
+        {isLoading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <SnapshotCellSkeleton key={i} last={i === 3} />
+            ))
+          : visible.slice(0, 4).map((item, i) => (
+              <SnapshotCell key={item.ticker} item={item} last={i === 3} />
+            ))}
+      </div>
+      {/* Row 2 */}
+      {(isLoading || visible.length > 4) && (
+        <div style={{ display: 'flex' }}>
+          {isLoading
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <SnapshotCellSkeleton key={i} last={i === 3} />
+              ))
+            : visible.slice(4, 8).map((item, i, arr) => (
+                <SnapshotCell key={item.ticker} item={item} last={i === arr.length - 1} />
+              ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -70,164 +201,78 @@ function Sparkline({ values, positive }: { values: number[]; positive: boolean }
 
 interface ActionCardProps {
   href: string;
-  icon: React.ReactNode;
-  label: string;
+  Icon: LucideIcon;
+  title: string;
   description: string;
 }
 
-function ActionCard({ href, icon, label, description }: ActionCardProps) {
+function ActionCard({ href, Icon, title, description }: ActionCardProps) {
   return (
     <Link
       href={href}
-      className="group flex flex-col gap-3 rounded-lg border border-[var(--border)] p-5 transition-colors duration-[var(--duration-fast)] hover:border-[var(--accent)] hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+      className={[
+        'group flex flex-col relative no-underline',
+        'rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--surface)]',
+        'hover:border-[var(--border)]',
+        'transition-[border-color] duration-[var(--duration-micro)] ease-[var(--ease)]',
+      ].join(' ')}
+      style={{ height: 140, padding: 20 }}
     >
-      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--bg-hover)] text-[var(--text-muted)] transition-colors group-hover:text-[var(--accent)]">
-        {icon}
-      </div>
-      <div>
-        <p className="text-[13px] font-medium text-primary mb-0.5">{label}</p>
-        <p className="text-[12px] text-muted leading-snug">{description}</p>
-      </div>
+      <Icon
+        size={16}
+        strokeWidth={1.5}
+        style={{ color: 'var(--text-tertiary)', marginBottom: 12, flexShrink: 0 }}
+      />
+      <p
+        style={{
+          fontSize: 16,
+          fontWeight: 600,
+          color: 'var(--text-primary)',
+          lineHeight: '24px',
+          marginBottom: 4,
+        }}
+      >
+        {title}
+      </p>
+      <p
+        style={{
+          fontSize: 13,
+          color: 'var(--text-secondary)',
+          lineHeight: '20px',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}
+      >
+        {description}
+      </p>
+
+      {/* Hover arrow — bottom-right */}
+      <ArrowRight
+        size={12}
+        strokeWidth={1.5}
+        style={{
+          position: 'absolute',
+          bottom: 14,
+          right: 14,
+          color: 'var(--text-tertiary)',
+        }}
+        className="opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--duration-micro)]"
+      />
     </Link>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot card
+// Section header (text-h3)
 // ---------------------------------------------------------------------------
 
-interface SnapshotCardProps {
-  ticker: string;
-  price: number;
-  change_pct: number;
-  sparkline: number[];
-}
-
-function SnapshotCard({ ticker, price, change_pct, sparkline }: SnapshotCardProps) {
-  const pos = change_pct >= 0;
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-4 w-[148px]">
-      <div className="flex items-center justify-between">
-        <span className="mono text-[11px] font-medium text-primary tracking-wide">{ticker}</span>
-        <span className={`mono text-[11px] tabular-nums ${pos ? 'gain' : 'loss'}`}>
-          {pos ? '+' : ''}{change_pct.toFixed(2)}%
-        </span>
-      </div>
-      <Sparkline values={sparkline} positive={pos} />
-      <span className="mono text-[13px] tabular-nums text-primary">
-        {price.toFixed(2)}
-      </span>
-    </div>
-  );
-}
-
-function SnapshotSkeleton() {
-  return (
-    <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-[var(--border)] p-4 w-[148px]">
-      <div className="skeleton h-3 w-16 rounded" />
-      <div className="skeleton h-6 w-full rounded" />
-      <div className="skeleton h-3 w-10 rounded" />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Market strip
-// ---------------------------------------------------------------------------
-
-function MarketStrip() {
-  const { data, isLoading, error } = api.data.marketSnapshot.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000,
-    retry: 1,
-  });
-
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [errorDismissed, setErrorDismissed] = useState(false);
-
-  const scroll = (dir: 'left' | 'right') => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollBy({ left: dir === 'right' ? 320 : -320, behavior: 'smooth' });
-  };
-
-  if (error && !errorDismissed) {
-    return (
-      <div className="flex items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-hover)] px-4 py-3 text-[13px] text-muted">
-        <span>Market snapshot unavailable — data service may be offline.</span>
-        <button
-          onClick={() => setErrorDismissed(true)}
-          className="ml-auto text-[11px] text-muted hover:text-primary transition-colors"
-          aria-label="Dismiss error"
-        >
-          Dismiss
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative flex items-center gap-2">
-      <button
-        onClick={() => scroll('left')}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[var(--border)] text-muted hover:text-primary hover:bg-[var(--bg-hover)] transition-colors"
-        aria-label="Scroll left"
-      >
-        <ChevronLeftIcon />
-      </button>
-
-      <div
-        ref={scrollRef}
-        className="flex gap-3 overflow-x-auto no-scrollbar flex-1"
-      >
-        {isLoading
-          ? Array.from({ length: 8 }).map((_, i) => <SnapshotSkeleton key={i} />)
-          : (data ?? []).map((item) => (
-              <SnapshotCard key={item.ticker} {...item} />
-            ))}
-      </div>
-
-      <button
-        onClick={() => scroll('right')}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[var(--border)] text-muted hover:text-primary hover:bg-[var(--bg-hover)] transition-colors"
-        aria-label="Scroll right"
-      >
-        <ChevronRightIcon />
-      </button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Section wrapper
-// ---------------------------------------------------------------------------
-
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <motion.section variants={slideUp} aria-labelledby={`section-${label.toLowerCase().replace(/\s+/g, '-')}`}>
-      <h2
-        id={`section-${label.toLowerCase().replace(/\s+/g, '-')}`}
-        className="mono text-[11px] uppercase tracking-[0.12em] text-muted mb-4"
-      >
-        {label}
-      </h2>
+    <p className="text-h3" style={{ color: 'var(--text-tertiary)', marginBottom: 16 }}>
       {children}
-    </motion.section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Stat chip
-// ---------------------------------------------------------------------------
-
-function Stat({ label, value, dimValue }: { label: string; value: string; dimValue?: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="mono text-[10px] uppercase tracking-[0.1em] text-muted">{label}</span>
-      <span className="mono text-[20px] tabular-nums font-medium text-primary leading-none">
-        {value}
-        {dimValue && <span className="text-[13px] text-muted ml-1">{dimValue}</span>}
-      </span>
-    </div>
+    </p>
   );
 }
 
@@ -237,154 +282,99 @@ function Stat({ label, value, dimValue }: { label: string; value: string; dimVal
 
 export default function DashboardPage() {
   const { tickers, activeAlgorithm, dateRange, frontier, currentWeights } = usePortfolioStore();
-  const hasBacktest = useBacktestStore((s) => s.result !== null);
 
   const hasPortfolio = tickers.length >= 2 && currentWeights !== null;
 
-  const frontierSharpe = frontier?.bestIdx != null
-    ? frontier.sharpes[frontier.bestIdx]
-    : null;
+  const frontierSharpe =
+    frontier?.bestIdx != null ? frontier.sharpes[frontier.bestIdx] : null;
+
+  const algoLabel = ALGO_LABELS[activeAlgorithm] ?? activeAlgorithm;
 
   return (
-    <div className="px-8 py-8 max-w-[1200px] mx-auto">
-      <motion.div
-        variants={stagger(0.06)}
-        initial="initial"
-        animate="animate"
-        className="flex flex-col gap-10"
-      >
-        {/* ── Section 1: Greeting + quick stats ───────────────────── */}
-        <motion.div variants={slideUp} className="flex flex-col gap-6">
-          <div>
-            <h1 className="text-[22px] font-semibold tracking-tight text-primary leading-tight">
-              {getGreeting()}
-            </h1>
-            <p className="text-[13px] text-muted mt-1">
-              {hasPortfolio
-                ? `${tickers.length}-asset portfolio · ${ALGO_LABELS[activeAlgorithm] ?? activeAlgorithm}`
-                : 'No portfolio loaded yet — head to Optimize to get started.'}
-            </p>
-          </div>
+    <motion.div
+      variants={stagger(0.06)}
+      initial="initial"
+      animate="animate"
+      style={{ display: 'flex', flexDirection: 'column', gap: 40, paddingBottom: 48 }}
+    >
 
-          {hasPortfolio && (
-            <div className="flex flex-wrap gap-8">
-              <Stat label="Assets" value={String(tickers.length)} />
-              <Stat label="Algorithm" value={ALGO_LABELS[activeAlgorithm] ?? activeAlgorithm} />
-              <Stat label="Date range" value={`${dateRange.start}`} dimValue={`→ ${dateRange.end}`} />
-              {frontierSharpe != null && (
-                <Stat label="Frontier Sharpe" value={fmtNum(frontierSharpe)} />
-              )}
-              {hasBacktest && (
-                <Stat label="Backtest" value="Ready" dimValue="→ /backtest" />
-              )}
-            </div>
-          )}
-        </motion.div>
-
-        {/* ── Section 2: Recent workspace ─────────────────────────── */}
-        {hasPortfolio && (
-          <Section label="Recent workspace">
-            <div className="rounded-lg border border-[var(--border)] p-5">
-              <div className="flex flex-wrap gap-2 mb-4">
-                {tickers.map((t) => (
-                  <span
-                    key={t}
-                    className="mono inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium text-primary bg-[var(--bg-hover)] border border-[var(--border)]"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-6 text-[12px] text-muted">
-                <span>Algorithm: <span className="text-primary">{ALGO_LABELS[activeAlgorithm] ?? activeAlgorithm}</span></span>
-                <span>From <span className="text-primary">{dateRange.start}</span> to <span className="text-primary">{dateRange.end}</span></span>
-                {currentWeights && (
-                  <Link href="/optimize" className="text-accent hover:underline ml-auto">
-                    Edit in Optimize →
-                  </Link>
-                )}
-              </div>
-            </div>
-          </Section>
+      {/* ── Header ────────────────────────────────────────────────────────── */}
+      <motion.div variants={slideUp}>
+        <p className="text-body" style={{ color: 'var(--text-secondary)', marginBottom: 6 }}>
+          {getGreeting()}
+        </p>
+        {hasPortfolio ? (
+          <h1 className="text-h1" style={{ color: 'var(--text-primary)' }}>
+            {tickers.length}-asset portfolio · {algoLabel}
+          </h1>
+        ) : (
+          <h1 className="text-h1" style={{ color: 'var(--text-tertiary)' }}>
+            No portfolio loaded
+          </h1>
         )}
-
-        {/* ── Section 3: Quick actions ─────────────────────────────── */}
-        <Section label="Quick actions">
-          <div className="grid grid-cols-3 gap-4">
-            <ActionCard
-              href="/optimize"
-              icon={<OptimizeIcon />}
-              label="Build Portfolio"
-              description="Select assets, run the efficient frontier, pick weights."
-            />
-            <ActionCard
-              href="/backtest"
-              icon={<BacktestIcon />}
-              label="Backtest"
-              description="Walk-forward simulation with transaction costs and slippage."
-            />
-            <ActionCard
-              href="/risk"
-              icon={<RiskIcon />}
-              label="Risk Analysis"
-              description="VaR, CVaR, stress tests, correlation globe, rolling Sharpe."
-            />
-          </div>
-        </Section>
-
-        {/* ── Section 4: Market snapshot ───────────────────────────── */}
-        <Section label="Market snapshot">
-          <MarketStrip />
-        </Section>
       </motion.div>
-    </div>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// Icons
-// ---------------------------------------------------------------------------
+      {/* ── Metric strip (portfolio loaded only) ─────────────────────────── */}
+      {hasPortfolio && (
+        <motion.div
+          variants={slideUp}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 32 }}
+        >
+          <MetricCard
+            label="Assets"
+            value={String(tickers.length)}
+          />
+          <MetricCard
+            label="Algorithm"
+            value={algoLabel}
+          />
+          <MetricCard
+            label="Date range"
+            value={`${dateRange.start.slice(0, 7)}`}
+            sub={`→ ${dateRange.end.slice(0, 7)}`}
+          />
+          <MetricCard
+            label="Frontier Sharpe"
+            value={frontierSharpe != null ? frontierSharpe.toFixed(2) : '—'}
+            color={
+              frontierSharpe == null ? undefined :
+              frontierSharpe >= 0 ? 'positive' : 'negative'
+            }
+          />
+        </motion.div>
+      )}
 
-function OptimizeIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
-      <polyline points="16 7 22 7 22 13" />
-    </svg>
-  );
-}
+      {/* ── Quick actions ─────────────────────────────────────────────────── */}
+      <motion.section variants={slideUp}>
+        <SectionLabel>Quick Actions</SectionLabel>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          <ActionCard
+            href="/optimize"
+            Icon={TrendingUp}
+            title="Build Portfolio"
+            description="Select assets, run the efficient frontier, pick weights."
+          />
+          <ActionCard
+            href="/backtest"
+            Icon={LineChart}
+            title="Backtest"
+            description="Walk-forward simulation with transaction costs and slippage."
+          />
+          <ActionCard
+            href="/risk"
+            Icon={ShieldAlert}
+            title="Risk Analysis"
+            description="VaR, CVaR, stress tests, correlation matrix, rolling Sharpe."
+          />
+        </div>
+      </motion.section>
 
-function BacktestIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M3 9h18M9 21V9" />
-    </svg>
-  );
-}
+      {/* ── Market snapshot ───────────────────────────────────────────────── */}
+      <motion.section variants={slideUp}>
+        <SectionLabel>Market Snapshot</SectionLabel>
+        <MarketSnapshot />
+      </motion.section>
 
-function RiskIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-      <line x1="12" y1="9" x2="12" y2="13" />
-      <line x1="12" y1="17" x2="12.01" y2="17" />
-    </svg>
-  );
-}
-
-function ChevronLeftIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M15 18l-6-6 6-6" />
-    </svg>
-  );
-}
-
-function ChevronRightIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M9 18l6-6-6-6" />
-    </svg>
+    </motion.div>
   );
 }

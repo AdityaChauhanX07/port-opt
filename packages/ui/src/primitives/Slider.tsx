@@ -24,10 +24,8 @@ export function Slider({
 }: SliderProps) {
   const displayValue = format ? format(value) : String(value);
 
-  // Equality guard: don't call onChange if Radix emits the same value (floating-
-  // point snap on initial mount). Without this guard the controlled value → snap
-  // → setState → re-render cycle repeats until React throws "Maximum update depth
-  // exceeded" via @radix-ui/react-compose-refs.
+  // Equality guard: prevents infinite re-render loop from Radix floating-point
+  // snap on controlled value during initial mount.
   const handleValueChange = useCallback(
     (vals: number[]) => {
       const newVal = vals[0];
@@ -39,33 +37,41 @@ export function Slider({
   );
 
   return (
-    <div className="space-y-2">
-      {/* Label row */}
+    <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-tertiary">{label}</span>
-        <span className="mono text-[12px] text-primary">{displayValue}</span>
+        <span
+          className="text-[13px] text-primary"
+          style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {displayValue}
+        </span>
       </div>
 
-      {/* Track */}
       <RadixSlider.Root
         min={min}
         max={max}
         step={step}
         value={[value]}
         onValueChange={handleValueChange}
-        className="relative flex items-center select-none touch-none w-full h-4"
+        className="relative flex items-center select-none touch-none w-full h-5"
       >
-        <RadixSlider.Track className="relative bg-[var(--border-strong)] rounded-full h-0.5 w-full grow overflow-hidden">
-          <RadixSlider.Range className="absolute h-full bg-accent/60 rounded-full" />
+        <RadixSlider.Track
+          className="relative rounded-full w-full grow overflow-hidden"
+          style={{ height: 2, background: 'var(--border-subtle)' }}
+        >
+          <RadixSlider.Range
+            className="absolute h-full rounded-full"
+            style={{ background: 'rgba(59,130,246,0.70)' }}
+          />
         </RadixSlider.Track>
 
         <RadixSlider.Thumb
           className={[
             'block w-3 h-3 rounded-full bg-primary',
-            'transition-[width,height,box-shadow] duration-[var(--duration-fast)]',
-            'hover:w-3.5 hover:h-3.5 hover:shadow-[0_0_0_3px_var(--accent-subtle)]',
-            'focus:outline-none focus:shadow-[0_0_0_3px_var(--accent-subtle)]',
-            'active:shadow-[0_0_0_3px_var(--accent-subtle)]',
+            'transition-[width,height] duration-[var(--duration-micro)] ease-[var(--ease)]',
+            'hover:w-3.5 hover:h-3.5',
+            'focus:outline-none',
           ].join(' ')}
           aria-label={label}
         />

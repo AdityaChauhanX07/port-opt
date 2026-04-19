@@ -3,8 +3,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Button, Card, Input, Slider, Tabs } from '@portopt/ui';
+import { ChevronDown } from 'lucide-react';
+import { Button, Input, Slider } from '@portopt/ui';
 import {
   MonteCarloFan,
   CorrelationMatrix,
@@ -19,36 +19,30 @@ import { usePortfolioStore } from '@/lib/stores/portfolio';
 import { useRiskStore } from '@/lib/stores/risk';
 import { useEngine } from '@/lib/wasm/use-engine';
 
-// Three.js globe — client-only, no SSR
 const CorrelationGlobe = dynamic(
   () => import('@portopt/three').then((m) => m.CorrelationGlobe),
-  { ssr: false, loading: () => <div style={{ height: 600 }} className="flex items-center justify-center"><p className="mono text-[13px] text-tertiary">Loading…</p></div> },
+  { ssr: false, loading: () => <div style={{ height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Loading…</p></div> },
 );
-import { slideUp, stagger } from '@/lib/motion';
 
 // ---------------------------------------------------------------------------
-// Token constants (for D3 series colors — CSS vars inaccessible in SVG attrs)
+// Token hex values (for D3 chart series)
 // ---------------------------------------------------------------------------
 
 const C = {
-  accent:  '#5e8eff',
-  accent2: '#8b5cf6',
-  gain:    '#3fb950',
-  loss:    '#f85149',
-  neutral: '#8b949e',
-  warn:    '#f59e0b',
+  accent:  '#3B82F6',
+  accent2: '#8B5CF6',
+  positive:'#10B981',
+  negative:'#EF4444',
+  neutral: '#A1A1A8',
+  warning: '#F59E0B',
 };
 
 const PPY_MAP = { daily: 252, weekly: 52, monthly: 12 } as const;
 
 const FACTOR_COLORS = [
-  '#5e8eff', '#3fb950', '#f59e0b', '#f85149', '#8b5cf6',
-  '#22d3ee', '#fb923c', '#a3e635',
+  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+  '#22D3EE', '#FB923C', '#A3E635',
 ];
-
-// ---------------------------------------------------------------------------
-// Stress periods
-// ---------------------------------------------------------------------------
 
 const STRESS_PERIODS = [
   { name: 'GFC',         start: '2007-10-01', end: '2009-03-31' },
@@ -57,33 +51,20 @@ const STRESS_PERIODS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Computation helpers (all pure JS, no WASM)
+// Computation helpers (all unchanged)
 // ---------------------------------------------------------------------------
 
-function computePortfolioReturns(
-  returns: Float64Array,
-  nAssets: number,
-  weights: Float64Array,
-): Float64Array {
+function computePortfolioReturns(returns: Float64Array, nAssets: number, weights: Float64Array): Float64Array {
   const nRet = Math.floor(returns.length / nAssets);
   const out = new Float64Array(nRet);
-  for (let t = 0; t < nRet; t++) {
-    let r = 0;
-    for (let i = 0; i < nAssets; i++) {
-      r += (weights[i] ?? 0) * (returns[t * nAssets + i] ?? 0);
-    }
-    out[t] = r;
-  }
+  for (let t = 0; t < nRet; t++) { let r = 0; for (let i = 0; i < nAssets; i++) r += (weights[i] ?? 0) * (returns[t * nAssets + i] ?? 0); out[t] = r; }
   return out;
 }
 
 function computeEquity(portRet: Float64Array): Float64Array {
   const equity = new Float64Array(portRet.length);
   let val = 1.0;
-  for (let t = 0; t < portRet.length; t++) {
-    val *= 1 + portRet[t];
-    equity[t] = val;
-  }
+  for (let t = 0; t < portRet.length; t++) { val *= 1 + portRet[t]!; equity[t] = val; }
   return equity;
 }
 
@@ -92,69 +73,46 @@ function computeVarCVar(portRet: Float64Array, alpha: number) {
   const sorted = Array.from(portRet).sort((a, b) => a - b);
   const n = sorted.length;
   const varIdx = Math.min(Math.floor((1 - alpha) * n), n - 1);
-  const varValue = -sorted[varIdx];
-
+  const varValue = -(sorted[varIdx] ?? 0);
   const cvarN = Math.max(1, varIdx);
-  const cvarValue = -sorted.slice(0, cvarN).reduce((a, b) => a + b, 0) / cvarN;
-
+  const cvarValue = -(sorted.slice(0, cvarN).reduce((a, b) => a + b, 0) / cvarN);
   const mean = portRet.reduce((a, b) => a + b, 0) / n;
   const variance = n > 1 ? portRet.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1) : 0;
   const std = Math.sqrt(variance);
   const m3 = portRet.reduce((a, b) => a + (b - mean) ** 3, 0) / n;
   const skewness = std > 0 ? m3 / std ** 3 : 0;
-
   return { varValue, cvarValue, mean, skewness };
 }
 
-function computeRollingSharpe(
-  portRet: Float64Array,
-  window: number,
-  ppy: number,
-): { sharpe: Array<number | null>; sortino: Array<number | null> } {
+function computeRollingSharpe(portRet: Float64Array, window: number, ppy: number) {
   const n = portRet.length;
   const sharpe: Array<number | null> = new Array(n).fill(null);
   const sortino: Array<number | null> = new Array(n).fill(null);
-
   for (let t = window - 1; t < n; t++) {
     const slice: number[] = [];
-    for (let k = t - window + 1; k <= t; k++) slice.push(portRet[k]);
-
+    for (let k = t - window + 1; k <= t; k++) slice.push(portRet[k]!);
     const mu = slice.reduce((a, b) => a + b, 0) / window;
     const variance = slice.reduce((a, b) => a + (b - mu) ** 2, 0) / (window - 1);
     const sigma = Math.sqrt(variance);
-
     const negRets = slice.filter((r) => r < 0);
-    const downVar = negRets.length > 0
-      ? negRets.reduce((a, b) => a + b ** 2, 0) / negRets.length
-      : 0;
-    const downDev = Math.sqrt(downVar * ppy);
-
+    const downDev = Math.sqrt((negRets.length > 0 ? negRets.reduce((a, b) => a + b ** 2, 0) / negRets.length : 0) * ppy);
     const annMu = mu * ppy;
-    sharpe[t] = sigma > 0 ? annMu / (sigma * Math.sqrt(ppy)) : null;
+    sharpe[t]  = sigma > 0 ? annMu / (sigma * Math.sqrt(ppy)) : null;
     sortino[t] = downDev > 0 ? annMu / downDev : null;
   }
-
   return { sharpe, sortino };
 }
 
 function computeCovMatrix(returns: Float64Array, nAssets: number): Float64Array {
   const nRet = Math.floor(returns.length / nAssets);
   const means = new Float64Array(nAssets);
-  for (let i = 0; i < nAssets; i++) {
-    let s = 0;
-    for (let t = 0; t < nRet; t++) s += returns[t * nAssets + i];
-    means[i] = s / nRet;
-  }
+  for (let i = 0; i < nAssets; i++) { let s = 0; for (let t = 0; t < nRet; t++) s += returns[t * nAssets + i]!; means[i] = s / nRet; }
   const cov = new Float64Array(nAssets * nAssets);
   for (let i = 0; i < nAssets; i++) {
     for (let j = i; j < nAssets; j++) {
       let s = 0;
-      for (let t = 0; t < nRet; t++) {
-        s += (returns[t * nAssets + i] - means[i]) * (returns[t * nAssets + j] - means[j]);
-      }
-      const c = nRet > 1 ? s / (nRet - 1) : 0;
-      cov[i * nAssets + j] = c;
-      cov[j * nAssets + i] = c;
+      for (let t = 0; t < nRet; t++) s += (returns[t * nAssets + i]! - means[i]!) * (returns[t * nAssets + j]! - means[j]!);
+      cov[i * nAssets + j] = cov[j * nAssets + i] = nRet > 1 ? s / (nRet - 1) : 0;
     }
   }
   return cov;
@@ -162,17 +120,11 @@ function computeCovMatrix(returns: Float64Array, nAssets: number): Float64Array 
 
 function computeRiskContribution(weights: Float64Array, cov: Float64Array, nAssets: number) {
   const covW = new Float64Array(nAssets);
-  for (let i = 0; i < nAssets; i++) {
-    for (let j = 0; j < nAssets; j++) {
-      covW[i] += cov[i * nAssets + j] * weights[j];
-    }
-  }
+  for (let i = 0; i < nAssets; i++) for (let j = 0; j < nAssets; j++) covW[i] += cov[i * nAssets + j]! * weights[j]!;
   let sigmaP2 = 0;
-  for (let i = 0; i < nAssets; i++) sigmaP2 += weights[i] * covW[i];
+  for (let i = 0; i < nAssets; i++) sigmaP2 += weights[i]! * covW[i]!;
   const rcPct = new Float64Array(nAssets);
-  for (let i = 0; i < nAssets; i++) {
-    rcPct[i] = sigmaP2 > 0 ? (weights[i] * covW[i]) / sigmaP2 : 1 / nAssets;
-  }
+  for (let i = 0; i < nAssets; i++) rcPct[i] = sigmaP2 > 0 ? (weights[i]! * covW[i]!) / sigmaP2 : 1 / nAssets;
   return rcPct;
 }
 
@@ -181,107 +133,80 @@ function computeStressPeriods(
   equityDates: string[],
   equitySeries: Array<{ label: string; equity: Float64Array }>,
 ) {
-  const results: Array<{
-    name: string; startDate: string; endDate: string;
-    series: Array<{ label: string; cumRet: number; maxDD: number; recoveryDays: number | null }>;
-  }> = [];
-
+  const results: Array<{ name: string; startDate: string; endDate: string; series: Array<{ label: string; cumRet: number; maxDD: number; recoveryDays: number | null }> }> = [];
   for (const p of periods) {
     const startIdx = equityDates.findIndex((d) => d >= p.start);
     if (startIdx === -1) continue;
     let endIdx = -1;
-    for (let i = equityDates.length - 1; i >= 0; i--) {
-      if (equityDates[i] <= p.end) { endIdx = i; break; }
-    }
+    for (let i = equityDates.length - 1; i >= 0; i--) { if (equityDates[i]! <= p.end) { endIdx = i; break; } }
     if (endIdx === -1 || startIdx >= endIdx) continue;
-
     const series = equitySeries.map(({ label, equity }) => {
       const startVal = equity[startIdx] || 1;
-      const endVal   = equity[endIdx]   || 1;
-      const cumRet   = endVal / startVal - 1;
-      let peak = equity[startIdx];
-      let maxDD = 0;
-      for (let i = startIdx; i <= endIdx; i++) {
-        if (equity[i] > peak) peak = equity[i];
-        const dd = peak > 0 ? equity[i] / peak - 1 : 0;
-        if (dd < maxDD) maxDD = dd;
-      }
+      const cumRet   = (equity[endIdx] || 1) / startVal - 1;
+      let peak = equity[startIdx]!; let maxDD = 0;
+      for (let i = startIdx; i <= endIdx; i++) { if (equity[i]! > peak) peak = equity[i]!; const dd = peak > 0 ? equity[i]! / peak - 1 : 0; if (dd < maxDD) maxDD = dd; }
       let recoveryDays: number | null = null;
-      for (let i = endIdx + 1; i < equity.length; i++) {
-        if (equity[i] >= startVal) {
-          const a = new Date(equityDates[startIdx] ?? p.start);
-          const b = new Date(equityDates[i]        ?? p.end);
-          recoveryDays = Math.round((b.getTime() - a.getTime()) / 86_400_000);
-          break;
-        }
-      }
+      for (let i = endIdx + 1; i < equity.length; i++) { if (equity[i]! >= startVal) { recoveryDays = Math.round((new Date(equityDates[i] ?? p.end).getTime() - new Date(equityDates[startIdx] ?? p.start).getTime()) / 86_400_000); break; } }
       return { label, cumRet, maxDD, recoveryDays };
     });
-
-    results.push({
-      name:      p.name,
-      startDate: equityDates[startIdx] ?? p.start,
-      endDate:   equityDates[endIdx]   ?? p.end,
-      series,
-    });
+    results.push({ name: p.name, startDate: equityDates[startIdx] ?? p.start, endDate: equityDates[endIdx] ?? p.end, series });
   }
   return results;
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Layout primitives
 // ---------------------------------------------------------------------------
 
-function SectionHeader({ label }: { label: string }) {
+function PanelSection({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="flex items-center gap-3 mb-5">
-      <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.06em] text-tertiary">
-        {label}
-      </p>
-      <div className="flex-1 h-px bg-[var(--border)]" />
+    <div style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-4 py-3 hover:bg-[var(--surface)] transition-colors duration-[var(--duration-micro)]">
+        <span className="text-h3" style={{ color: 'var(--text-tertiary)' }}>{title}</span>
+        <ChevronDown size={12} strokeWidth={2} style={{ color: 'var(--text-tertiary)', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--duration-micro) var(--ease)' }} />
+      </button>
+      {open && <div className="px-4 pb-4">{children}</div>}
     </div>
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  variant = 'default',
-  sub,
-}: {
-  label: string;
-  value: string;
-  variant?: 'default' | 'gain' | 'loss' | 'accent' | 'warn';
-  sub?: string;
-}) {
-  const colorCls =
-    variant === 'gain'   ? 'text-gain'   :
-    variant === 'loss'   ? 'text-loss'   :
-    variant === 'accent' ? 'text-accent' :
-    variant === 'warn'   ? 'text-warn'   :
-    'text-primary';
+function SegCtrl({ options, value, onChange }: { options: { value: string; label: string }[]; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex flex-col gap-1 rounded-md bg-subtle px-4 py-3">
-      <span className="text-[11px] uppercase tracking-[0.05em] text-tertiary">{label}</span>
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.span
-          key={value}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.12 }}
-          className={`mono text-lg font-medium tabular-nums leading-none ${colorCls}`}
-        >
-          {value}
-        </motion.span>
-      </AnimatePresence>
-      {sub && <span className="text-[11px] text-tertiary">{sub}</span>}
+    <div className="flex h-7 rounded border border-[var(--border)] overflow-hidden">
+      {options.map((opt, i) => (
+        <button key={opt.value} type="button" onClick={() => onChange(opt.value)}
+          className={['flex-1 text-[12px] font-medium transition-colors duration-[var(--duration-micro)]', i > 0 ? 'border-l border-[var(--border)]' : '',
+            value === opt.value ? 'bg-[var(--surface-elevated)] text-primary' : 'text-secondary hover:text-primary'].join(' ')}>
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PerfMetric({ label, value, color }: { label: string; value: string; color?: 'positive' | 'negative' | 'accent' | 'warning' }) {
+  const vc = color === 'positive' ? 'var(--positive)' : color === 'negative' ? 'var(--negative)' : color === 'accent' ? 'var(--accent)' : color === 'warning' ? 'var(--warning)' : 'var(--text-primary)';
+  return (
+    <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
+      <p style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 4 }}>{label}</p>
+      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 18, fontWeight: 500, color: vc, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{value}</p>
+    </div>
+  );
+}
+
+function RightSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 24 }}>
+      <p className="text-h3" style={{ color: 'var(--text-tertiary)', marginBottom: 16 }}>{title}</p>
+      {children}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Main page
+// Page
 // ---------------------------------------------------------------------------
 
 export default function RiskPage() {
@@ -294,16 +219,8 @@ export default function RiskPage() {
   const frequency      = store.frequency;
   const currentWeights = store.currentWeights;
 
-  const {
-    mcResult, isMcRunning, mcError,
-    corrMatrix, isCorrLoading, corrError,
-    setMcResult, setMcRunning, setMcError,
-    setCorrMatrix, setCorrLoading, setCorrError,
-    reset: resetRisk,
-  } = useRiskStore();
-
+  const { mcResult, isMcRunning, mcError, corrMatrix, isCorrLoading, corrError, setMcResult, setMcRunning, setMcError, setCorrMatrix, setCorrLoading, setCorrError, reset: resetRisk } = useRiskStore();
   const trpcUtils = api.useUtils();
-
   const engine = useEngine();
 
   // ── UI state ───────────────────────────────────────────────────────────────
@@ -314,1052 +231,405 @@ export default function RiskPage() {
   const [rollingWindow, setRollingWindow] = useState(126);
   const [rollingHover,  setRollingHover]  = useState<number | null>(null);
   const [corrView,      setCorrView]      = useState<'2d' | '3d'>('2d');
-
-  // Regime detection
   const [regimeResult,    setRegimeResult]    = useState<RegimeResult | null>(null);
   const [isRegimeRunning, setIsRegimeRunning] = useState(false);
   const [regimeError,     setRegimeError]     = useState<string | null>(null);
   const [nRegimes,        setNRegimes]        = useState(2);
-
-  // Factor decomposition
   const [factorResult,    setFactorResult]    = useState<FactorDecomposition | null>(null);
   const [isFactorRunning, setIsFactorRunning] = useState(false);
   const [factorError,     setFactorError]     = useState<string | null>(null);
   const [factorModel,     setFactorModel]     = useState<'proxy' | 'ff5'>('proxy');
 
-  // ── Prerequisites ──────────────────────────────────────────────────────────
   const hasData    = returns !== null && nPeriods > 1 && nAssets > 0;
   const hasWeights = currentWeights !== null;
   const ready      = hasData && hasWeights;
 
-  // Reset risk caches when underlying data changes
   const prevReturnsRef = useRef<Float64Array | null>(null);
   useEffect(() => {
-    if (prevReturnsRef.current !== returns) {
-      prevReturnsRef.current = returns;
-      resetRisk();
-    }
+    if (prevReturnsRef.current !== returns) { prevReturnsRef.current = returns; resetRisk(); }
   }, [returns, resetRisk]);
 
   // ── Derived quantities ────────────────────────────────────────────────────
-
   const ppy = PPY_MAP[frequency];
-  // Returns have T-1 rows; nPeriods from the store counts price rows (T).
   const nRetPeriods = returns && nAssets > 0 ? Math.floor(returns.length / nAssets) : 0;
 
-  const portRet = useMemo(() => {
-    if (!returns || !currentWeights || nAssets < 1) return null;
-    return computePortfolioReturns(returns, nAssets, currentWeights);
-  }, [returns, nAssets, currentWeights]);
-
-  const riskStats = useMemo(
-    () => portRet ? computeVarCVar(portRet, confidence) : null,
-    [portRet, confidence],
-  );
-
-  const portEquity = useMemo(
-    () => portRet ? computeEquity(portRet) : null,
-    [portRet],
-  );
-
-  const ewEquity = useMemo(() => {
-    if (!returns || nAssets < 1) return null;
-    const ewW = new Float64Array(nAssets).fill(1 / nAssets);
-    return computeEquity(computePortfolioReturns(returns, nAssets, ewW));
-  }, [returns, nAssets]);
-
-  // annualised stats from portfolio returns (used for MC fan chart)
-  const annStats = useMemo(() => {
-    if (!portRet || portRet.length < 2) return null;
-    const n = portRet.length;
-    const mean = portRet.reduce((a, b) => a + b, 0) / n;
-    const variance = portRet.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1);
-    return {
-      muAnnual:  mean * ppy,
-      volAnnual: Math.sqrt(variance * ppy),
-    };
-  }, [portRet, ppy]);
-
-  // Rolling Sharpe / Sortino
-  const rollingMetrics = useMemo(() => {
-    if (!portRet || portRet.length < rollingWindow + 1) return null;
-    return computeRollingSharpe(portRet, rollingWindow, ppy);
-  }, [portRet, rollingWindow, ppy]);
-
-  // Covariance matrix + risk contribution
-  const { covMatrix, rcPct } = useMemo(() => {
-    if (!returns || !currentWeights || nAssets < 1) return {};
-    const cov = computeCovMatrix(returns, nAssets);
-    const rc  = computeRiskContribution(currentWeights, cov, nAssets);
-    return { covMatrix: cov, rcPct: rc };
-  }, [returns, nAssets, currentWeights]);
-
-  // Stress periods (aligned with equityDates = dates.slice(1))
+  const portRet = useMemo(() => { if (!returns || !currentWeights || nAssets < 1) return null; return computePortfolioReturns(returns, nAssets, currentWeights); }, [returns, nAssets, currentWeights]);
+  const riskStats = useMemo(() => portRet ? computeVarCVar(portRet, confidence) : null, [portRet, confidence]);
+  const portEquity = useMemo(() => portRet ? computeEquity(portRet) : null, [portRet]);
+  const ewEquity = useMemo(() => { if (!returns || nAssets < 1) return null; const ewW = new Float64Array(nAssets).fill(1 / nAssets); return computeEquity(computePortfolioReturns(returns, nAssets, ewW)); }, [returns, nAssets]);
+  const annStats = useMemo(() => { if (!portRet || portRet.length < 2) return null; const n = portRet.length; const mean = portRet.reduce((a, b) => a + b, 0) / n; const variance = portRet.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1); return { muAnnual: mean * ppy, volAnnual: Math.sqrt(variance * ppy) }; }, [portRet, ppy]);
+  const rollingMetrics = useMemo(() => { if (!portRet || portRet.length < rollingWindow + 1) return null; return computeRollingSharpe(portRet, rollingWindow, ppy); }, [portRet, rollingWindow, ppy]);
+  const { rcPct } = useMemo(() => { if (!returns || !currentWeights || nAssets < 1) return {}; const cov = computeCovMatrix(returns, nAssets); return { rcPct: computeRiskContribution(currentWeights, cov, nAssets) }; }, [returns, nAssets, currentWeights]);
   const equityDates = useMemo(() => dates.slice(1), [dates]);
-
   const stressData = useMemo(() => {
     if (!portEquity || equityDates.length === 0) return [];
-    const series: Array<{ label: string; equity: Float64Array }> = [
-      { label: 'Portfolio', equity: portEquity },
-    ];
+    const series: Array<{ label: string; equity: Float64Array }> = [{ label: 'Portfolio', equity: portEquity }];
     if (ewEquity) series.push({ label: 'Equal Weight', equity: ewEquity });
-
     const spyIdx = tickers.indexOf('SPY');
-    if (spyIdx >= 0 && returns) {
-      const nRet = Math.floor(returns.length / nAssets);
-      const spyEq = new Float64Array(nRet);
-      let val = 1;
-      for (let t = 0; t < nRet; t++) {
-        val *= 1 + (returns[t * nAssets + spyIdx] ?? 0);
-        spyEq[t] = val;
-      }
-      series.push({ label: 'SPY', equity: spyEq });
-    }
-
+    if (spyIdx >= 0 && returns) { const nRet = Math.floor(returns.length / nAssets); const spyEq = new Float64Array(nRet); let val = 1; for (let t = 0; t < nRet; t++) { val *= 1 + (returns[t * nAssets + spyIdx] ?? 0); spyEq[t] = val; } series.push({ label: 'SPY', equity: spyEq }); }
     return computeStressPeriods(STRESS_PERIODS, equityDates, series);
   }, [portEquity, ewEquity, equityDates, tickers, returns, nAssets]);
+  const stressChartData = useMemo(() => stressData.map((sp) => ({ group: sp.name, bars: sp.series.map((s, i) => ({ label: s.label, value: s.cumRet, color: i === 0 ? (s.cumRet >= 0 ? C.positive : C.negative) : C.neutral })) })), [stressData]);
+  const sortedRcPct = useMemo(() => { if (!rcPct) return []; return Array.from({ length: nAssets }, (_, i) => ({ ticker: tickers[i] ?? `A${i}`, rc: rcPct[i] ?? 0 })).sort((a, b) => b.rc - a.rc); }, [rcPct, nAssets, tickers]);
 
-  const stressChartData = useMemo(
-    () =>
-      stressData.map((sp) => ({
-        group: sp.name,
-        bars: sp.series.map((s, i) => ({
-          label: s.label,
-          value: s.cumRet,
-          color: i === 0 ? (s.cumRet >= 0 ? C.gain : C.loss) : C.neutral,
-        })),
-      })),
-    [stressData],
-  );
-
-  // Sorted risk contributions (descending)
-  const sortedRcPct = useMemo(() => {
-    if (!rcPct) return [];
-    return Array.from({ length: nAssets }, (_, i) => ({
-      ticker: tickers[i] ?? `A${i}`,
-      rc: rcPct[i] ?? 0,
-    })).sort((a, b) => b.rc - a.rc);
-  }, [rcPct, nAssets, tickers]);
-
-  // ── Correlation matrix (async WASM) ───────────────────────────────────────
-
+  // ── Correlation matrix (auto) ─────────────────────────────────────────────
   useEffect(() => {
     if (!returns || !nRetPeriods || !nAssets || corrMatrix) return;
-    setCorrLoading(true);
-    setCorrError(null);
-    engine
-      .computeCorrelation(returns, nRetPeriods, nAssets)
-      .then((m) => {
-        setCorrMatrix(m as Float64Array);
-        setCorrLoading(false);
-      })
-      .catch((e) => {
-        setCorrError(e instanceof Error ? e.message : String(e));
-        setCorrLoading(false);
-      });
+    setCorrLoading(true); setCorrError(null);
+    engine.computeCorrelation(returns, nRetPeriods, nAssets)
+      .then((m) => { setCorrMatrix(m as Float64Array); setCorrLoading(false); })
+      .catch((e) => { setCorrError(e instanceof Error ? e.message : String(e)); setCorrLoading(false); });
   }, [returns, nRetPeriods, nAssets, corrMatrix, engine, setCorrMatrix, setCorrLoading, setCorrError]);
 
-  // ── Monte Carlo ──────────────────────────────────────────────────────────
-
+  // ── Handlers ─────────────────────────────────────────────────────────────
   const runMonteCarlo = useCallback(async () => {
     if (!annStats) return;
-    setMcRunning(true);
-    setMcError(null);
-    try {
-      const result = await engine.runMonteCarlo({
-        mu_annual:   annStats.muAnnual,
-        vol_annual:  annStats.volAnnual,
-        start_value: 1.0,
-        years:       horizon,
-        ppy,
-        n_paths:     nPaths,
-        seed:        mcSeed,
-      });
-      setMcResult(result, {
-        horizon,
-        nPaths,
-        seed: mcSeed,
-        muAnnual:  annStats.muAnnual,
-        volAnnual: annStats.volAnnual,
-        ppy,
-      });
-    } catch (e) {
-      setMcError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setMcRunning(false);
-    }
+    setMcRunning(true); setMcError(null);
+    try { const result = await engine.runMonteCarlo({ mu_annual: annStats.muAnnual, vol_annual: annStats.volAnnual, start_value: 1.0, years: horizon, ppy, n_paths: nPaths, seed: mcSeed }); setMcResult(result, { horizon, nPaths, seed: mcSeed, muAnnual: annStats.muAnnual, volAnnual: annStats.volAnnual, ppy }); }
+    catch (e) { setMcError(e instanceof Error ? e.message : String(e)); }
+    finally { setMcRunning(false); }
   }, [annStats, horizon, ppy, nPaths, mcSeed, engine, setMcResult, setMcRunning, setMcError]);
-
-  // ── Regime detection ─────────────────────────────────────────────────────
 
   const runRegimeDetection = useCallback(async () => {
     if (!portRet) return;
-    setIsRegimeRunning(true);
-    setRegimeError(null);
-    try {
-      const result = await engine.detectRegimes(portRet, nRegimes, 100, 42);
-      setRegimeResult(result);
-    } catch (e) {
-      setRegimeError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setIsRegimeRunning(false);
-    }
+    setIsRegimeRunning(true); setRegimeError(null);
+    try { setRegimeResult(await engine.detectRegimes(portRet, nRegimes, 100, 42)); }
+    catch (e) { setRegimeError(e instanceof Error ? e.message : String(e)); }
+    finally { setIsRegimeRunning(false); }
   }, [portRet, nRegimes, engine]);
-
-  // ── Factor decomposition ─────────────────────────────────────────────────
 
   const runFactorDecomposition = useCallback(async () => {
     if (!portRet || !store.dateRange) return;
-    setIsFactorRunning(true);
-    setFactorError(null);
+    setIsFactorRunning(true); setFactorError(null);
     try {
-      const factorData = await trpcUtils.data.fetchFactors.fetch({
-        start_date: store.dateRange.start,
-        end_date:   store.dateRange.end,
-        frequency:  frequency === 'weekly' ? 'daily' : frequency,
-        model:      factorModel,
-      });
-
+      const factorData = await trpcUtils.data.fetchFactors.fetch({ start_date: store.dateRange.start, end_date: store.dateRange.end, frequency: frequency === 'weekly' ? 'daily' : frequency, model: factorModel });
       const { dates: factorDates, factor_names, values } = factorData;
       const K = factor_names.length;
-
-      // Align factor dates with portfolio return dates (equityDates)
-      const portDates = equityDates; // dates of returns (T)
+      const portDates = equityDates;
       const portDateSet = new Set(portDates);
-      const aligned: number[] = [];
-      const usedPortIdx: number[] = [];
-
-      for (let i = 0; i < factorDates.length; i++) {
-        const d = factorDates[i];
-        if (portDateSet.has(d)) {
-          const pidx = portDates.indexOf(d);
-          usedPortIdx.push(pidx);
-          for (let k = 0; k < K; k++) {
-            aligned.push(values[i * K + k]);
-          }
-        }
-      }
-
-      if (usedPortIdx.length < K + 5) {
-        throw new Error('Too few overlapping dates between portfolio and factor data.');
-      }
-
-      // Build aligned portfolio returns
-      const alignedPort = new Float64Array(usedPortIdx.map((i) => portRet[i] ?? 0));
-      const alignedFactors = new Float64Array(aligned);
-      const T = usedPortIdx.length;
-
-      const result = await engine.decomposeFactorRisk(
-        alignedPort,
-        alignedFactors,
-        T,
-        K,
-        factor_names,
-        ppy,
-      );
+      const aligned: number[] = []; const usedPortIdx: number[] = [];
+      for (let i = 0; i < factorDates.length; i++) { const d = factorDates[i]; if (portDateSet.has(d)) { const pidx = portDates.indexOf(d); usedPortIdx.push(pidx); for (let k = 0; k < K; k++) aligned.push(values[i * K + k]!); } }
+      if (usedPortIdx.length < K + 5) throw new Error('Too few overlapping dates between portfolio and factor data.');
+      const result = await engine.decomposeFactorRisk(new Float64Array(usedPortIdx.map((i) => portRet[i] ?? 0)), new Float64Array(aligned), usedPortIdx.length, K, factor_names, ppy);
       setFactorResult(result);
-    } catch (e) {
-      setFactorError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setIsFactorRunning(false);
-    }
+    } catch (e) { setFactorError(e instanceof Error ? e.message : String(e)); }
+    finally { setIsFactorRunning(false); }
   }, [portRet, store.dateRange, frequency, factorModel, equityDates, engine, ppy, trpcUtils]);
 
-  // ── Formatters ─────────────────────────────────────────────────────────────
+  // ── Formatters ────────────────────────────────────────────────────────────
+  const fmtPct = (v: number | null | undefined, decimals = 2) => v == null ? '—' : `${(v * 100).toFixed(decimals)}%`;
+  const fmtNum = (v: number | null | undefined, d = 3) => v == null ? '—' : v.toFixed(d);
 
-  const fmtPct = (v: number | null | undefined, decimals = 2) =>
-    v == null ? '—' : `${(v * 100).toFixed(decimals)}%`;
-  const fmtNum = (v: number | null | undefined, d = 3) =>
-    v == null ? '—' : v.toFixed(d);
-
-  // ── Early return: empty state ─────────────────────────────────────────────
-
+  // ── Empty state ───────────────────────────────────────────────────────────
   if (!ready) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <p className="mb-3 text-[14px] text-tertiary">No portfolio weights computed yet.</p>
-          <Link
-            href="/optimize"
-            className="text-[14px] text-accent hover:text-accent-hover transition-colors duration-[var(--duration)]"
-          >
-            Compute weights on the Optimize workspace first →
-          </Link>
+      <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ marginBottom: 12, fontSize: 14, color: 'var(--text-tertiary)' }}>No portfolio weights computed yet.</p>
+          <Link href="/optimize" style={{ fontSize: 14, color: 'var(--accent)', textDecoration: 'none' }}>Compute weights on the Optimize workspace first →</Link>
         </div>
       </div>
     );
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-
   return (
-    <motion.div
-      className="overflow-y-auto p-6 flex flex-col"
-      style={{ gap: 'var(--space-12)' }}
-      initial="initial"
-      animate="animate"
-      variants={stagger(0.05)}
-    >
+    <div style={{ height: 'calc(100vh - 88px)', display: 'flex', overflow: 'hidden' }}>
 
-      {/* ── SECTION 1: Risk metrics summary ─────────────────────────────── */}
-      <motion.section variants={slideUp}>
-        <SectionHeader label="Risk Metrics" />
+      {/* ══ LEFT PANEL ══════════════════════════════════════════════════════ */}
+      <aside style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border-subtle)' }}>
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
 
-        {/* Controls */}
-        <div className="flex items-center gap-4 mb-5">
-          <span className="text-[12px] text-secondary shrink-0">Confidence</span>
-          <div className="w-48">
-            <Slider
-              label="Confidence level"
-              value={confidence}
-              min={0.90}
-              max={0.99}
-              step={0.01}
-              format={(v) => v.toFixed(2)}
-              onChange={setConfidence}
-            />
-          </div>
-          <span className="mono text-[14px] text-primary tabular-nums">{confidence.toFixed(2)}</span>
+          {/* Confidence */}
+          <PanelSection title="Confidence">
+            <Slider label="Confidence level" value={confidence} min={0.90} max={0.99} step={0.01} format={(v) => `${(v * 100).toFixed(0)}%`} onChange={setConfidence} />
+          </PanelSection>
+
+          {/* Monte Carlo */}
+          <PanelSection title="Monte Carlo">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Slider label="Horizon" value={horizon} min={0.25} max={5} step={0.25} format={(v) => `${v}y`} onChange={setHorizon} />
+              <Slider label="Paths" value={nPaths} min={100} max={10000} step={100} format={(v) => v.toLocaleString()} onChange={setNPaths} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Seed</span>
+                <Input type="number" value={String(mcSeed)} onChange={(e) => setMcSeed(Number(e.target.value))} className="w-20 h-7 text-[12px]" />
+              </div>
+              <Button variant="secondary" size="md" className="w-full" onClick={runMonteCarlo} disabled={isMcRunning || !annStats} loading={isMcRunning}>
+                {isMcRunning ? 'Running…' : 'Run Monte Carlo'}
+              </Button>
+              {mcError && <p style={{ fontSize: 12, color: 'var(--negative)' }}>{mcError}</p>}
+            </div>
+          </PanelSection>
+
+          {/* Rolling Window */}
+          <PanelSection title="Rolling Window">
+            <Slider label="Window" value={rollingWindow} min={30} max={252} step={10} format={(v) => `${Math.round(v)}d`} onChange={(v) => setRollingWindow(Math.round(v))} />
+          </PanelSection>
+
+          {/* Regime Detection */}
+          <PanelSection title="Regime Detection">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <SegCtrl options={[{ value: '2', label: '2-state' }, { value: '3', label: '3-state' }]} value={String(nRegimes)} onChange={(v) => setNRegimes(Number(v))} />
+              <Button variant="secondary" size="md" className="w-full" onClick={runRegimeDetection} disabled={isRegimeRunning || !portRet} loading={isRegimeRunning}>
+                {isRegimeRunning ? 'Fitting HMM…' : 'Detect Regimes'}
+              </Button>
+              {regimeError && <p style={{ fontSize: 12, color: 'var(--negative)' }}>{regimeError}</p>}
+            </div>
+          </PanelSection>
+
+          {/* Factor Model */}
+          <PanelSection title="Factor Model" defaultOpen={false}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <SegCtrl options={[{ value: 'proxy', label: 'Market + Sectors' }, { value: 'ff5', label: 'Fama-French 5' }]} value={factorModel} onChange={(v) => setFactorModel(v as 'proxy' | 'ff5')} />
+              <Button variant="secondary" size="md" className="w-full" onClick={runFactorDecomposition} disabled={isFactorRunning || !portRet} loading={isFactorRunning}>
+                {isFactorRunning ? 'Running OLS…' : 'Run Decomposition'}
+              </Button>
+            </div>
+          </PanelSection>
+
         </div>
+      </aside>
 
-        <div className="grid grid-cols-4 gap-3">
-          <MetricCard
-            label={`VaR ${(confidence * 100).toFixed(0)}% (per period)`}
-            value={riskStats ? `−${fmtPct(riskStats.varValue)}` : '—'}
-            variant="loss"
-          />
-          <MetricCard
-            label={`CVaR ${(confidence * 100).toFixed(0)}% (per period)`}
-            value={riskStats ? `−${fmtPct(riskStats.cvarValue)}` : '—'}
-            variant="loss"
-          />
-          <MetricCard
-            label="Mean return (per period)"
-            value={riskStats ? `${riskStats.mean >= 0 ? '+' : ''}${fmtPct(riskStats.mean, 3)}` : '—'}
-            variant={riskStats ? (riskStats.mean >= 0 ? 'gain' : 'loss') : 'default'}
-          />
-          <MetricCard
-            label="Skewness"
-            value={riskStats ? fmtNum(riskStats.skewness) : '—'}
-          />
-        </div>
-      </motion.section>
+      {/* ══ RIGHT PANEL ═════════════════════════════════════════════════════ */}
+      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 32 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-      {/* ── SECTION 2: Monte Carlo simulation ───────────────────────────── */}
-      <motion.section variants={slideUp}>
-        <SectionHeader label="Monte Carlo Simulation" />
+          {/* 1 — Risk Metrics */}
+          <RightSection title="Risk Metrics">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+              <PerfMetric label={`VaR ${(confidence * 100).toFixed(0)}%`}  value={riskStats ? `−${fmtPct(riskStats.varValue)}` : '—'} color="negative" />
+              <PerfMetric label={`CVaR ${(confidence * 100).toFixed(0)}%`} value={riskStats ? `−${fmtPct(riskStats.cvarValue)}` : '—'} color="negative" />
+              <PerfMetric label="Mean Return" value={riskStats ? `${riskStats.mean >= 0 ? '+' : ''}${fmtPct(riskStats.mean, 3)}` : '—'} color={riskStats ? (riskStats.mean >= 0 ? 'positive' : 'negative') : undefined} />
+              <PerfMetric label="Skewness" value={riskStats ? fmtNum(riskStats.skewness) : '—'} />
+            </div>
+          </RightSection>
 
-        {/* Controls */}
-        <div className="grid grid-cols-3 gap-6 mb-5">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.05em] text-tertiary mb-2">
-              Horizon — <span className="mono text-primary normal-case tracking-normal">{horizon}y</span>
-            </p>
-            <Slider
-              label="Horizon"
-              value={horizon}
-              min={0.25}
-              max={5}
-              step={0.25}
-              format={(v) => `${v}y`}
-              onChange={setHorizon}
-            />
-          </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.05em] text-tertiary mb-2">
-              Paths — <span className="mono text-primary normal-case tracking-normal">{nPaths.toLocaleString()}</span>
-            </p>
-            <Slider
-              label="Paths"
-              value={nPaths}
-              min={100}
-              max={10000}
-              step={100}
-              format={(v) => v.toLocaleString()}
-              onChange={setNPaths}
-            />
-          </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.05em] text-tertiary mb-2">Seed</p>
-            <Input
-              type="number"
-              value={String(mcSeed)}
-              onChange={(e) => setMcSeed(Number(e.target.value))}
-              min={0}
-              className="w-full"
-            />
-          </div>
-        </div>
-
-        <div className="mb-5">
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={runMonteCarlo}
-            disabled={isMcRunning || !annStats}
-            loading={isMcRunning}
-          >
-            {isMcRunning ? 'Running…' : 'Run Monte Carlo'}
-          </Button>
-          {mcError && (
-            <span className="ml-3 text-[12px] text-loss">{mcError}</span>
-          )}
+          {/* 2 — Monte Carlo Fan */}
           {annStats && (
-            <span className="ml-3 text-[12px] text-tertiary mono">
-              μ = {fmtPct(annStats.muAnnual, 1)}/yr · σ = {fmtPct(annStats.volAnnual, 1)}/yr
-            </span>
+            <RightSection title="Monte Carlo Simulation">
+              <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+                μ = {fmtPct(annStats.muAnnual, 1)}/yr · σ = {fmtPct(annStats.volAnnual, 1)}/yr · {horizon}y horizon · {nPaths.toLocaleString()} paths
+              </p>
+              <MonteCarloFan muAnnual={annStats.muAnnual} volAnnual={annStats.volAnnual} ppy={ppy} years={horizon} height={400} />
+              {mcResult && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginTop: 20 }}>
+                  <PerfMetric label="Terminal mean"   value={mcResult.mean != null ? `${mcResult.mean.toFixed(3)}×` : '—'} />
+                  <PerfMetric label="Median"          value={mcResult.median != null ? `${mcResult.median.toFixed(3)}×` : '—'} />
+                  <PerfMetric label="5th pct"         value={mcResult.p5 != null ? `${mcResult.p5.toFixed(3)}×` : '—'} color="negative" />
+                  <PerfMetric label="95th pct"        value={mcResult.p95 != null ? `${mcResult.p95.toFixed(3)}×` : '—'} color="positive" />
+                  <PerfMetric label="Prob. loss"      value={mcResult.probLoss != null ? fmtPct(mcResult.probLoss) : '—'} color={mcResult.probLoss == null ? undefined : mcResult.probLoss < 0.10 ? 'positive' : mcResult.probLoss < 0.30 ? 'warning' : 'negative'} />
+                </div>
+              )}
+              {!mcResult && !isMcRunning && <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 16 }}>Run Monte Carlo to compute terminal statistics.</p>}
+            </RightSection>
           )}
-        </div>
 
-        {/* Fan chart — always visible, uses analytical GBM */}
-        {annStats && (
-          <Card padding="md" className="mb-5">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-[13px] font-medium text-primary">Equity fan (GBM analytical)</p>
-              <div className="flex items-center gap-4 text-[11px] text-tertiary">
-                <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-4 h-0.5 rounded" style={{ background: 'rgba(94,142,255,0.14)', border: '1px solid rgba(94,142,255,0.4)' }} />
-                  5–95%
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-4 h-0.5 rounded" style={{ background: 'rgba(94,142,255,0.28)', border: '1px solid rgba(94,142,255,0.6)' }} />
-                  25–75%
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-4 h-0.5 bg-accent rounded" />
-                  median
-                </span>
+          {/* 3 — Correlation Matrix */}
+          <RightSection title="Correlation Matrix">
+            {/* 2D/3D toggle */}
+            {corrMatrix && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                <SegCtrl options={[{ value: '2d', label: '2D Heatmap' }, { value: '3d', label: '3D Globe' }]} value={corrView} onChange={(v) => setCorrView(v as '2d' | '3d')} />
               </div>
-            </div>
-            <MonteCarloFan
-              muAnnual={annStats.muAnnual}
-              volAnnual={annStats.volAnnual}
-              ppy={ppy}
-              years={horizon}
-              height={280}
-            />
-          </Card>
-        )}
-
-        {/* Terminal stat cards from WASM run */}
-        {mcResult && (
-          <div className="grid grid-cols-5 gap-3">
-            <MetricCard
-              label="Terminal mean"
-              value={mcResult.mean != null ? `${mcResult.mean.toFixed(3)}×` : '—'}
-            />
-            <MetricCard
-              label="Terminal median"
-              value={mcResult.median != null ? `${mcResult.median.toFixed(3)}×` : '—'}
-            />
-            <MetricCard
-              label="5th percentile"
-              value={mcResult.p5 != null ? `${mcResult.p5.toFixed(3)}×` : '—'}
-              variant="loss"
-            />
-            <MetricCard
-              label="95th percentile"
-              value={mcResult.p95 != null ? `${mcResult.p95.toFixed(3)}×` : '—'}
-              variant="gain"
-            />
-            <MetricCard
-              label="Prob. of loss"
-              value={mcResult.probLoss != null ? fmtPct(mcResult.probLoss) : '—'}
-              variant={
-                mcResult.probLoss == null ? 'default' :
-                mcResult.probLoss < 0.10 ? 'gain' :
-                mcResult.probLoss < 0.30 ? 'warn' :
-                'loss'
-              }
-            />
-          </div>
-        )}
-
-        {!mcResult && !isMcRunning && (
-          <p className="text-[13px] text-tertiary">
-            Run simulation to compute terminal statistics ({nPaths.toLocaleString()} paths, {horizon}y horizon).
-          </p>
-        )}
-      </motion.section>
-
-      {/* ── SECTION 3: Correlation matrix ───────────────────────────────── */}
-      <motion.section variants={slideUp}>
-        {/* Section header + view toggle on the same row */}
-        <div className="flex items-center gap-3 mb-5">
-          <p className="shrink-0 text-[11px] font-medium uppercase tracking-[0.06em] text-tertiary">
-            Correlation Matrix
-          </p>
-          <div className="flex-1 h-px bg-[var(--border)]" />
-          {corrMatrix && (
-            <Tabs
-              tabs={[
-                { value: '2d', label: '2D Heatmap' },
-                { value: '3d', label: '3D Globe'   },
-              ]}
-              value={corrView}
-              onValueChange={(v) => setCorrView(v as '2d' | '3d')}
-            />
-          )}
-        </div>
-
-        {isCorrLoading && (
-          <p className="text-[13px] text-tertiary">Computing correlation…</p>
-        )}
-        {corrError && (
-          <p className="text-[13px] text-loss">{corrError}</p>
-        )}
-
-        {corrMatrix && !isCorrLoading && (
-          <AnimatePresence mode="wait" initial={false}>
-            {corrView === '2d' ? (
-              <motion.div
-                key="heatmap"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.18 }}
-              >
-                <CorrelationMatrix
-                  matrix={corrMatrix}
-                  tickers={tickers}
-                  returns={returns}
-                  nAssets={nAssets}
-                />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="globe"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.18 }}
-              >
-                <CorrelationGlobe
-                  correlations={corrMatrix}
-                  tickers={tickers}
-                />
-              </motion.div>
             )}
-          </AnimatePresence>
-        )}
+            {isCorrLoading && <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Computing correlation…</p>}
+            {corrError && <p style={{ fontSize: 13, color: 'var(--negative)' }}>{corrError}</p>}
+            {corrMatrix && !isCorrLoading && (
+              corrView === '2d' ? (
+                <CorrelationMatrix matrix={corrMatrix} tickers={tickers} returns={returns} nAssets={nAssets} />
+              ) : (
+                <CorrelationGlobe correlations={corrMatrix} tickers={tickers} />
+              )
+            )}
+            {!corrMatrix && !isCorrLoading && !corrError && <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Correlation matrix loading…</p>}
+          </RightSection>
 
-        {!corrMatrix && !isCorrLoading && !corrError && (
-          <p className="text-[13px] text-tertiary">Correlation matrix will load automatically.</p>
-        )}
-      </motion.section>
+          {/* 4 — Rolling Sharpe & Sortino */}
+          <RightSection title="Rolling Sharpe & Sortino">
+            {rollingMetrics ? (
+              <>
+                <TimeSeriesLine
+                  series={[
+                    { label: 'Sharpe',  values: rollingMetrics.sharpe,  color: C.accent },
+                    { label: 'Sortino', values: rollingMetrics.sortino, color: C.accent2, dashed: true },
+                  ]}
+                  dates={equityDates}
+                  refLines={[
+                    { y: 0, stroke: '#2A2A2F', dashArray: '4 4' },
+                    { y: 1, stroke: '#737373', dashArray: '2 4', label: '1' },
+                  ]}
+                  yFormat={(v) => v.toFixed(2)}
+                  height={240}
+                  hoverIdx={rollingHover}
+                  onHover={setRollingHover}
+                />
+                <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.accent }}>
+                    <span style={{ display: 'inline-block', width: 16, height: 2, background: C.accent, borderRadius: 2 }} />Sharpe
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.accent2 }}>
+                    <span style={{ display: 'inline-block', width: 16, height: 0, borderTop: `2px dashed ${C.accent2}` }} />Sortino
+                  </span>
+                  <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    Window: {rollingWindow}d
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Need at least {rollingWindow + 1} return periods.</p>
+            )}
+          </RightSection>
 
-      {/* ── SECTION 4: Rolling Sharpe & Sortino ─────────────────────────── */}
-      <motion.section variants={slideUp}>
-        <SectionHeader label="Rolling Sharpe & Sortino" />
-
-        <div className="flex items-center gap-4 mb-5">
-          <span className="text-[12px] text-secondary shrink-0">Window</span>
-          <div className="w-48">
-            <Slider
-              label="Rolling window"
-              value={rollingWindow}
-              min={30}
-              max={252}
-              step={10}
-              format={(v) => `${Math.round(v)}d`}
-              onChange={(v) => setRollingWindow(Math.round(v))}
-            />
-          </div>
-          <span className="mono text-[14px] text-primary tabular-nums">{rollingWindow}</span>
-        </div>
-
-        {rollingMetrics ? (
-          <Card padding="md">
-            <TimeSeriesLine
-              series={[
-                { label: 'Sharpe',  values: rollingMetrics.sharpe,  color: C.accent  },
-                { label: 'Sortino', values: rollingMetrics.sortino, color: C.accent2, dashed: true },
-              ]}
-              dates={equityDates}
-              refLines={[
-                { y: 0, stroke: 'rgba(255,255,255,0.08)', dashArray: '4 4' },
-                { y: 1, stroke: '#737373', dashArray: '2 4', label: '1' },
-              ]}
-              yFormat={(v) => v.toFixed(2)}
-              height={240}
-              hoverIdx={rollingHover}
-              onHover={setRollingHover}
-            />
-            <div className="flex items-center justify-between mt-2 px-1">
-              <div className="flex items-center gap-4 text-[11px]">
-                <span className="flex items-center gap-1.5 text-accent">
-                  <span className="inline-block w-4 h-0.5 bg-accent rounded" />
-                  Sharpe
-                </span>
-                <span className="flex items-center gap-1.5" style={{ color: C.accent2 }}>
-                  <span className="inline-block w-4 h-0.5 rounded" style={{ borderTop: `2px dashed ${C.accent2}` }} />
-                  Sortino
-                </span>
-              </div>
-              <p className="mono text-[var(--text-xs)] text-tertiary">
-                Rolling window: {rollingWindow} periods ({rollingWindow}d)
-              </p>
-            </div>
-          </Card>
-        ) : (
-          <p className="text-[13px] text-tertiary">
-            Need at least {rollingWindow + 1} return periods for rolling window.
-          </p>
-        )}
-      </motion.section>
-
-      {/* ── SECTION 5: Market regime detection ──────────────────────────── */}
-      <motion.section variants={slideUp}>
-        <SectionHeader label="Market Regime Detection" />
-
-        {/* Controls */}
-        <div className="flex items-center gap-4 mb-5">
-          <span className="text-[12px] text-secondary shrink-0">Regimes</span>
-          <div className="flex gap-2">
-            {[2, 3].map((k) => (
-              <button
-                key={k}
-                onClick={() => setNRegimes(k)}
-                className={`h-7 w-8 rounded text-[12px] mono transition-colors duration-[var(--duration)] ${
-                  nRegimes === k
-                    ? 'bg-accent text-white'
-                    : 'bg-subtle text-secondary hover:bg-[var(--bg-hover)]'
-                }`}
-              >
-                {k}
-              </button>
-            ))}
-          </div>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={runRegimeDetection}
-            disabled={isRegimeRunning || !portRet}
-            loading={isRegimeRunning}
-          >
-            {isRegimeRunning ? 'Fitting HMM…' : 'Detect Regimes'}
-          </Button>
-          {regimeError && (
-            <span className="text-[12px] text-loss">{regimeError}</span>
-          )}
-        </div>
-
-        {regimeResult && portRet && portEquity ? (
-          <>
-            {/* Summary cards */}
-            <div
-              className="grid gap-3 mb-5"
-              style={{ gridTemplateColumns: `repeat(${nRegimes}, minmax(0,1fr))` }}
-            >
-              {Array.from({ length: nRegimes }, (_, k) => {
-                const meanAnn = (regimeResult.regimeMeans[k] ?? 0) * ppy;
-                const volAnn  = (regimeResult.regimeVols[k]  ?? 0) * Math.sqrt(ppy);
-                const frac    = regimeResult.stationaryDist[k] ?? 0;
-                const label   = k === 0 ? 'Bear' : k === nRegimes - 1 ? 'Bull' : 'Neutral';
-                const variant = k === 0 ? 'loss' : k === nRegimes - 1 ? 'gain' : 'warn';
-                return (
-                  <div key={k} className="rounded-md bg-subtle px-4 py-3 space-y-1">
-                    <span className="text-[11px] uppercase tracking-[0.05em] text-tertiary">{label}</span>
-                    <div className={`mono text-lg font-medium tabular-nums ${variant === 'gain' ? 'text-gain' : variant === 'loss' ? 'text-loss' : 'text-warn'}`}>
-                      {meanAnn >= 0 ? '+' : ''}{(meanAnn * 100).toFixed(1)}% / yr
-                    </div>
-                    <div className="text-[11px] text-secondary">
-                      σ = {(volAnn * 100).toFixed(1)}% · {(frac * 100).toFixed(0)}% of time
-                    </div>
+          {/* 5 — Regime Detection results */}
+          {(regimeResult || isRegimeRunning) && (
+            <RightSection title="Market Regime Detection">
+              {isRegimeRunning && <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Fitting HMM…</p>}
+              {regimeResult && portRet && portEquity && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${nRegimes}, 1fr)`, gap: 12, marginBottom: 20 }}>
+                    {Array.from({ length: nRegimes }, (_, k) => {
+                      const meanAnn = (regimeResult.regimeMeans[k] ?? 0) * ppy;
+                      const volAnn  = (regimeResult.regimeVols[k]  ?? 0) * Math.sqrt(ppy);
+                      const label   = k === 0 ? 'Bear' : k === nRegimes - 1 ? 'Bull' : 'Neutral';
+                      return (
+                        <div key={k} style={{ background: 'var(--bg-inset)', borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+                          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 500, marginBottom: 4 }}>{label}</p>
+                          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 18, fontWeight: 500, color: k === 0 ? 'var(--negative)' : k === nRegimes - 1 ? 'var(--positive)' : 'var(--warning)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                            {meanAnn >= 0 ? '+' : ''}{(meanAnn * 100).toFixed(1)}%/yr
+                          </p>
+                          <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>σ = {(volAnn * 100).toFixed(1)}% · {((regimeResult.stationaryDist[k] ?? 0) * 100).toFixed(0)}% of time</p>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
+                  <RegimeTimeline
+                    returns={Array.from(portRet)}
+                    equity={[1, ...Array.from(portEquity)]}
+                    stateSequence={regimeResult.stateSequence}
+                    dates={equityDates}
+                    nRegimes={nRegimes}
+                    height={220}
+                  />
+                </>
+              )}
+            </RightSection>
+          )}
 
-            {/* Timeline chart */}
-            <Card padding="md" className="mb-5">
-              <p className="text-[12px] font-medium text-secondary mb-3">
-                Regime timeline — equity curve with regime background
-              </p>
-              <RegimeTimeline
-                returns={Array.from(portRet)}
-                equity={[1, ...Array.from(portEquity)]}
-                stateSequence={regimeResult.stateSequence}
-                dates={equityDates}
-                nRegimes={nRegimes}
-                height={220}
-              />
-            </Card>
-
-            {/* Transition matrix */}
-            <div className="mb-5">
-              <p className="text-[11px] uppercase tracking-[0.05em] text-tertiary mb-3">
-                Transition Matrix
-              </p>
-              <div className="inline-block rounded-md bg-subtle overflow-hidden">
-                <table className="text-[12px] mono">
+          {/* 6 — Historical Stress Periods */}
+          {stressData.length > 0 && (
+            <RightSection title="Historical Stress Periods">
+              <GroupedBarChart data={stressChartData} height={220} />
+              <div style={{ marginTop: 20, overflowX: 'auto' }}>
+                <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr>
-                      <th className="px-4 py-2 text-tertiary text-left">From ╲ To</th>
-                      {Array.from({ length: nRegimes }, (_, k) => (
-                        <th key={k} className="px-4 py-2 text-tertiary">
-                          {k === 0 ? 'Bear' : k === nRegimes - 1 ? 'Bull' : 'Neutral'}
-                        </th>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      {['Period', 'Series', 'Cum. Return', 'Max DD', 'Recovery'].map((h) => (
+                        <th key={h} style={{ paddingBottom: 8, paddingRight: 12, textAlign: h === 'Cum. Return' || h === 'Max DD' || h === 'Recovery' ? 'right' : 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)', fontWeight: 500 }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {regimeResult.transitionMatrix.map((row, i) => (
-                      <tr key={i} className="hairline-t">
-                        <td className="px-4 py-2 text-secondary">
-                          {i === 0 ? 'Bear' : i === nRegimes - 1 ? 'Bull' : 'Neutral'}
-                        </td>
-                        {row.map((p, j) => (
-                          <td
-                            key={j}
-                            className={`px-4 py-2 text-center tabular-nums ${
-                              i === j ? 'text-accent font-medium' : 'text-primary'
-                            }`}
-                          >
-                            {(p * 100).toFixed(1)}%
+                    {stressData.flatMap((sp) => sp.series.map((s, si) => (
+                      <tr key={`${sp.name}-${s.label}`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        {si === 0 ? (
+                          <td style={{ padding: '6px 12px 6px 0', color: 'var(--text-secondary)' }} rowSpan={sp.series.length}>
+                            <div style={{ fontWeight: 500 }}>{sp.name}</div>
+                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)' }}>{sp.startDate} – {sp.endDate}</div>
                           </td>
-                        ))}
+                        ) : null}
+                        <td style={{ padding: '6px 12px 6px 0', color: 'var(--text-secondary)' }}>{s.label}</td>
+                        <td style={{ padding: '6px 12px 6px 0', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 500, color: s.cumRet >= 0 ? 'var(--positive)' : 'var(--negative)', fontVariantNumeric: 'tabular-nums' }}>{s.cumRet >= 0 ? '+' : ''}{(s.cumRet * 100).toFixed(2)}%</td>
+                        <td style={{ padding: '6px 12px 6px 0', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--negative)', fontVariantNumeric: 'tabular-nums' }}>{(s.maxDD * 100).toFixed(2)}%</td>
+                        <td style={{ padding: '6px 0 6px 0', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{s.recoveryDays != null ? `${s.recoveryDays}d` : 'Not yet'}</td>
                       </tr>
-                    ))}
+                    )))}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </RightSection>
+          )}
 
-            {/* Per-regime performance table */}
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.05em] text-tertiary mb-3">
-                Regime-conditional Statistics
-              </p>
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="hairline-b">
-                    {['Regime', 'Periods', 'Ann. Return', 'Ann. Vol', 'Sharpe'].map((h) => (
-                      <th
-                        key={h}
-                        className="pb-2 pr-4 text-left text-[11px] uppercase tracking-[0.05em] text-tertiary last:pr-0"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: nRegimes }, (_, k) => {
-                    const indices = regimeResult.stateSequence
-                      .map((s, t) => (s === k ? t : -1))
-                      .filter((t) => t >= 0);
-                    const count = indices.length;
-                    const rets  = indices.map((t) => portRet[t] ?? 0);
-                    const muP   = count > 0 ? rets.reduce((a, b) => a + b, 0) / count : 0;
-                    const varP  = count > 1 ? rets.reduce((a, b) => a + (b - muP) ** 2, 0) / (count - 1) : 0;
-                    const muA   = muP * ppy;
-                    const volA  = Math.sqrt(varP * ppy);
-                    const sharpe = volA > 0 ? muA / volA : 0;
-                    const label  = k === 0 ? 'Bear' : k === nRegimes - 1 ? 'Bull' : 'Neutral';
-                    return (
-                      <tr key={k} className="hairline-b last:border-0 hover:bg-[var(--bg-hover)]">
-                        <td className="py-2 pr-4 text-secondary">{label}</td>
-                        <td className="py-2 pr-4 mono text-secondary">{count}</td>
-                        <td className={`py-2 pr-4 mono ${muA >= 0 ? 'text-gain' : 'text-loss'}`}>
-                          {muA >= 0 ? '+' : ''}{(muA * 100).toFixed(2)}%
-                        </td>
-                        <td className="py-2 pr-4 mono text-secondary">{(volA * 100).toFixed(2)}%</td>
-                        <td className={`py-2 mono ${sharpe >= 1 ? 'text-gain' : sharpe >= 0 ? 'text-secondary' : 'text-loss'}`}>
-                          {sharpe.toFixed(2)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : (
-          !isRegimeRunning && (
-            <p className="text-[13px] text-tertiary">
-              Click "Detect Regimes" to fit a {nRegimes}-state Gaussian HMM to the portfolio return series.
-            </p>
-          )
-        )}
-      </motion.section>
-
-      {/* ── SECTION 6: Historical stress periods ────────────────────────── */}
-      <motion.section variants={slideUp}>
-        <SectionHeader label="Historical Stress Periods" />
-
-        {stressData.length > 0 ? (
-          <>
-            <GroupedBarChart data={stressChartData} height={220} />
-
-            <div className="mt-5 overflow-x-auto">
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="hairline-b">
-                    {['Period', 'Series', 'Cum. Return', 'Max DD', 'Recovery'].map((h) => (
-                      <th
-                        key={h}
-                        className="pb-2 pr-4 text-left text-[11px] uppercase tracking-[0.05em] text-tertiary last:pr-0 last:text-right"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {stressData.flatMap((sp) =>
-                    sp.series.map((s, si) => (
-                      <tr
-                        key={`${sp.name}-${s.label}`}
-                        className="hairline-b last:border-0 hover:bg-[var(--bg-hover)]"
-                      >
-                        {si === 0 ? (
-                          <td className="py-2 pr-4 text-secondary" rowSpan={sp.series.length}>
-                            <div className="font-medium">{sp.name}</div>
-                            <div className="mono text-[11px] text-tertiary">
-                              {sp.startDate} – {sp.endDate}
-                            </div>
-                          </td>
-                        ) : null}
-                        <td className="py-2 pr-4 text-secondary">{s.label}</td>
-                        <td className={`py-2 pr-4 text-right mono font-medium ${s.cumRet >= 0 ? 'text-gain' : 'text-loss'}`}>
-                          {s.cumRet >= 0 ? '+' : ''}{(s.cumRet * 100).toFixed(2)}%
-                        </td>
-                        <td className="py-2 pr-4 text-right mono text-loss">
-                          {(s.maxDD * 100).toFixed(2)}%
-                        </td>
-                        <td className="py-2 text-right mono text-secondary">
-                          {s.recoveryDays != null ? `${s.recoveryDays}d` : 'Not yet'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : (
-          <p className="text-[13px] text-tertiary">
-            No overlap between portfolio data and the defined stress periods (GFC, COVID, 2022).
-          </p>
-        )}
-      </motion.section>
-
-      {/* ── SECTION 7: Marginal risk contribution ───────────────────────── */}
-      <motion.section variants={slideUp}>
-        <SectionHeader label="Marginal Risk Contribution" />
-
-        {sortedRcPct.length > 0 ? (
-          <>
-            <div className="space-y-2.5 max-w-xl">
-              {sortedRcPct.map(({ ticker, rc }) => {
-                const equalRc = 1 / nAssets;
-                return (
-                  <div key={ticker} className="flex items-center gap-3">
-                    <span className="w-14 shrink-0 text-right mono text-[12px] text-secondary">
-                      {ticker}
-                    </span>
-                    <div className="relative flex-1 h-6 rounded-sm overflow-hidden bg-subtle">
-                      <motion.div
-                        className="absolute inset-y-0 left-0 rounded-sm bg-accent"
-                        animate={{ width: `${Math.min(rc * 100, 100)}%` }}
-                        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                      />
-                      {/* Equal contribution reference line */}
-                      <div
-                        className="absolute inset-y-0 w-px border-l border-dotted border-[var(--border-strong)]"
-                        style={{ left: `${equalRc * 100}%` }}
-                      />
+          {/* 7 — Marginal Risk Contribution */}
+          {sortedRcPct.length > 0 && (
+            <RightSection title="Marginal Risk Contribution">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 520 }}>
+                {sortedRcPct.map(({ ticker, rc }) => (
+                  <div key={ticker} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 48, flexShrink: 0, textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>{ticker}</span>
+                    <div style={{ flex: 1, height: 20, background: 'var(--bg-inset)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', position: 'relative' }}>
+                      <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${Math.min(rc * 100, 100)}%`, background: 'var(--accent)', borderRadius: 'var(--radius-sm)', transition: 'width var(--duration-micro) var(--ease)' }} />
+                      <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(1 / nAssets) * 100}%`, width: 1, background: 'var(--border-strong)' }} />
                     </div>
-                    <span className="w-12 shrink-0 text-right mono text-[12px] text-primary tabular-nums">
-                      {(rc * 100).toFixed(1)}%
-                    </span>
+                    <span style={{ width: 44, flexShrink: 0, textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{(rc * 100).toFixed(1)}%</span>
                   </div>
-                );
-              })}
-            </div>
-            <p className="mt-3 max-w-xl mono text-[var(--text-xs)] text-tertiary leading-relaxed">
-              MRC_i = w_i × (Σw)_i / σ_p. Shows how much each asset drives total portfolio volatility. Dotted line = equal contribution ({(100 / nAssets).toFixed(1)}%).
-            </p>
-          </>
-        ) : (
-          <p className="text-[13px] text-tertiary">Weights required to compute risk contributions.</p>
-        )}
-      </motion.section>
+                ))}
+              </div>
+              <p style={{ marginTop: 10, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)' }}>
+                MRC_i = w_i × (Σw)_i / σ_p · dotted line = equal contribution ({(100 / nAssets).toFixed(1)}%)
+              </p>
+            </RightSection>
+          )}
 
-      {/* ── SECTION 8: Factor decomposition ─────────────────────────────── */}
-      <motion.section variants={slideUp}>
-        <SectionHeader label="Factor Decomposition" />
+          {/* 8 — Factor Decomposition */}
+          {(factorResult || factorError || isFactorRunning) && (
+            <RightSection title="Factor Decomposition">
+              {isFactorRunning && <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Running OLS regression…</p>}
+              {factorError && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, background: 'var(--surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Factor data unavailable.</span>{' '}
+                    {factorError.length < 120 ? factorError : 'The factor returns endpoint could not be reached or returned an error.'}
+                  </p>
+                  <button onClick={() => setFactorError(null)} style={{ flexShrink: 0, fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer' }}>Dismiss</button>
+                </div>
+              )}
+              {factorResult && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+                    <PerfMetric label="R²" value={factorResult.r_squared.toFixed(3)} color={factorResult.r_squared > 0.7 ? 'positive' : factorResult.r_squared > 0.4 ? 'warning' : undefined} />
+                    <PerfMetric label="Alpha (ann.)" value={`${factorResult.alpha >= 0 ? '+' : ''}${(factorResult.alpha * 100).toFixed(2)}%`} color={factorResult.alpha >= 0 ? 'positive' : 'negative'} />
+                    <PerfMetric label="Tracking Error" value={`${(factorResult.trackingError * 100).toFixed(2)}%`} />
+                    <PerfMetric label="Info. Ratio" value={factorResult.informationRatio.toFixed(2)} color={factorResult.informationRatio > 0.5 ? 'positive' : factorResult.informationRatio > 0 ? 'warning' : 'negative'} />
+                  </div>
+                  <WaterfallChart showTotal bars={[...factorResult.factorNames.map((name, k) => ({ label: name, value: factorResult.factorRiskContributions[k] ?? 0, color: FACTOR_COLORS[k % FACTOR_COLORS.length]! })), { label: 'Specific', value: factorResult.specificRiskPct, color: '#484848' }]} height={220} />
+                  <div style={{ marginTop: 20, overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                          {['Factor', 'Beta', 'Risk Contrib.', 't-stat', 'Sig.'].map((h) => (
+                            <th key={h} style={{ paddingBottom: 8, paddingRight: 12, textAlign: h === 'Beta' || h === 'Risk Contrib.' || h === 't-stat' || h === 'Sig.' ? 'right' : 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)', fontWeight: 500 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {factorResult.factorNames.map((name, k) => {
+                          const beta  = factorResult.betas[k] ?? 0;
+                          const rc    = factorResult.factorRiskContributions[k] ?? 0;
+                          const tstat = factorResult.tStats[k] ?? 0;
+                          const sig   = Math.abs(tstat) > 2;
+                          return (
+                            <tr key={name} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                              <td style={{ padding: '6px 12px 6px 0', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: FACTOR_COLORS[k % FACTOR_COLORS.length], flexShrink: 0 }} />
+                                {name}
+                              </td>
+                              <td style={{ padding: '6px 12px 6px 0', textAlign: 'right', fontFamily: 'var(--font-mono)', color: beta > 0 ? 'var(--positive)' : beta < 0 ? 'var(--negative)' : 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{beta >= 0 ? '+' : ''}{beta.toFixed(3)}</td>
+                              <td style={{ padding: '6px 12px 6px 0', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{(rc * 100).toFixed(1)}%</td>
+                              <td style={{ padding: '6px 12px 6px 0', textAlign: 'right', fontFamily: 'var(--font-mono)', color: sig ? 'var(--text-primary)' : 'var(--text-tertiary)', fontWeight: sig ? 500 : 400, fontVariantNumeric: 'tabular-nums' }}>{tstat >= 0 ? '+' : ''}{tstat.toFixed(2)}</td>
+                              <td style={{ padding: '6px 0 6px 0', textAlign: 'right', fontFamily: 'var(--font-mono)', color: sig ? 'var(--positive)' : 'var(--text-tertiary)' }}>{sig ? 'yes' : '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </RightSection>
+          )}
 
-        {/* Controls */}
-        <div className="flex items-center gap-4 mb-5 flex-wrap">
-          <span className="text-[12px] text-secondary shrink-0">Model</span>
-          <div className="flex gap-2">
-            {(['proxy', 'ff5'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setFactorModel(m)}
-                className={`h-7 px-3 rounded text-[12px] transition-colors duration-[var(--duration)] ${
-                  factorModel === m
-                    ? 'bg-accent text-white'
-                    : 'bg-subtle text-secondary hover:bg-[var(--bg-hover)]'
-                }`}
-              >
-                {m === 'proxy' ? 'Market + Sectors' : 'Fama-French 5'}
-              </button>
-            ))}
-          </div>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={runFactorDecomposition}
-            disabled={isFactorRunning || !portRet}
-            loading={isFactorRunning}
-          >
-            {isFactorRunning ? 'Running OLS…' : 'Run Decomposition'}
-          </Button>
         </div>
-
-        {factorError && (
-          <div className="flex items-start justify-between gap-3 rounded-md bg-subtle border border-[var(--border)] px-4 py-3 mb-5">
-            <p className="text-[13px] text-secondary leading-snug">
-              <span className="font-medium text-primary">Factor data unavailable.</span>{' '}
-              {factorError.length < 120 ? factorError : 'The factor returns endpoint could not be reached or returned an error.'}
-            </p>
-            <button
-              onClick={() => setFactorError(null)}
-              className="shrink-0 text-[11px] text-tertiary hover:text-secondary transition-colors duration-[var(--duration)] mt-0.5"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        {factorResult ? (
-          <>
-            {/* Summary metrics */}
-            <div className="grid grid-cols-4 gap-3 mb-6">
-              <MetricCard
-                label="R²"
-                value={factorResult.r_squared.toFixed(3)}
-                variant={factorResult.r_squared > 0.7 ? 'gain' : factorResult.r_squared > 0.4 ? 'warn' : 'default'}
-              />
-              <MetricCard
-                label="Alpha (ann.)"
-                value={`${factorResult.alpha >= 0 ? '+' : ''}${(factorResult.alpha * 100).toFixed(2)}%`}
-                variant={factorResult.alpha >= 0 ? 'gain' : 'loss'}
-              />
-              <MetricCard
-                label="Tracking Error"
-                value={`${(factorResult.trackingError * 100).toFixed(2)}%`}
-              />
-              <MetricCard
-                label="Info. Ratio"
-                value={factorResult.informationRatio.toFixed(2)}
-                variant={
-                  factorResult.informationRatio > 0.5 ? 'gain' :
-                  factorResult.informationRatio > 0   ? 'warn' :
-                  'loss'
-                }
-              />
-            </div>
-
-            {/* Waterfall chart */}
-            <Card padding="md" className="mb-6">
-              <p className="text-[12px] font-medium text-secondary mb-3">
-                Risk attribution — factor + idiosyncratic
-              </p>
-              <WaterfallChart
-                showTotal
-                bars={[
-                  ...factorResult.factorNames.map((name, k) => ({
-                    label: name,
-                    value: factorResult.factorRiskContributions[k] ?? 0,
-                    color: FACTOR_COLORS[k % FACTOR_COLORS.length],
-                  })),
-                  {
-                    label: 'Specific',
-                    value: factorResult.specificRiskPct,
-                    color: '#484848',
-                  },
-                ]}
-                height={220}
-              />
-            </Card>
-
-            {/* Factor exposure table */}
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.05em] text-tertiary mb-3">
-                Factor Exposures (Beta)
-              </p>
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="hairline-b">
-                    {['Factor', 'Beta', 'Risk Contrib.', 't-stat', 'Significant'].map((h) => (
-                      <th
-                        key={h}
-                        className="pb-2 pr-4 text-left text-[11px] uppercase tracking-[0.05em] text-tertiary last:pr-0"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {factorResult.factorNames.map((name, k) => {
-                    const beta = factorResult.betas[k] ?? 0;
-                    const rc   = factorResult.factorRiskContributions[k] ?? 0;
-                    const tstat = factorResult.tStats[k] ?? 0;
-                    const sig   = Math.abs(tstat) > 2;
-                    return (
-                      <tr key={name} className="hairline-b last:border-0 hover:bg-[var(--bg-hover)]">
-                        <td className="py-2 pr-4 text-secondary flex items-center gap-2">
-                          <span
-                            className="inline-block w-2 h-2 rounded-full"
-                            style={{ background: FACTOR_COLORS[k % FACTOR_COLORS.length] }}
-                          />
-                          {name}
-                        </td>
-                        <td className={`py-2 pr-4 mono ${beta > 0 ? 'text-gain' : beta < 0 ? 'text-loss' : 'text-secondary'}`}>
-                          {beta >= 0 ? '+' : ''}{beta.toFixed(3)}
-                        </td>
-                        <td className="py-2 pr-4 mono text-secondary">
-                          {(rc * 100).toFixed(1)}%
-                        </td>
-                        <td className={`py-2 pr-4 mono tabular-nums ${sig ? 'text-primary font-medium' : 'text-tertiary'}`}>
-                          {tstat >= 0 ? '+' : ''}{tstat.toFixed(2)}
-                        </td>
-                        <td className="py-2 mono">
-                          {sig ? (
-                            <span className="text-gain">✓</span>
-                          ) : (
-                            <span className="text-tertiary">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="hairline-t">
-                    <td className="pt-2 pr-4 text-tertiary text-[11px]">Specific</td>
-                    <td className="pt-2 pr-4 mono text-tertiary">—</td>
-                    <td className="pt-2 pr-4 mono text-secondary">{(factorResult.specificRiskPct * 100).toFixed(1)}%</td>
-                    <td className="pt-2 pr-4 mono text-tertiary">—</td>
-                    <td className="pt-2 mono text-tertiary">—</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : (
-          !isFactorRunning && (
-            <p className="text-[13px] text-tertiary">
-              Click "Run Decomposition" to regress portfolio returns on{' '}
-              {factorModel === 'proxy' ? 'market + sector ETF proxy factors' : 'Fama-French 5 factors'}.
-            </p>
-          )
-        )}
-      </motion.section>
-
-    </motion.div>
+      </div>
+    </div>
   );
 }

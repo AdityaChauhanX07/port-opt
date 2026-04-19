@@ -35,14 +35,15 @@ export function Tooltip({
           align={align}
           sideOffset={6}
           className={[
-            'z-50 rounded border border-[var(--border)] bg-elevated px-2.5 py-1.5',
+            'z-50 px-3 py-2',
+            'rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-elevated)]',
             'text-[13px] text-secondary',
             'animate-in fade-in-0 zoom-in-95',
             'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
             'data-[side=bottom]:slide-in-from-top-2',
             'data-[side=top]:slide-in-from-bottom-2',
           ].join(' ')}
-          style={{ animationDuration: '120ms' }}
+          style={{ animationDuration: 'var(--duration-micro)' }}
         >
           {content}
         </RadixTooltip.Content>

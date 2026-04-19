@@ -33,19 +33,15 @@ export function Select({
   );
 
   return (
-    <RadixSelect.Root
-      value={value}
-      onValueChange={handleValueChange}
-      disabled={disabled}
-    >
+    <RadixSelect.Root value={value} onValueChange={handleValueChange} disabled={disabled}>
       <RadixSelect.Trigger
         className={[
           'inline-flex items-center justify-between gap-2',
-          'h-8 px-3 rounded border border-transparent bg-inset',
+          'h-9 px-3 rounded border border-[var(--border)] bg-[var(--bg)]',
           'text-[13px] text-primary',
-          'outline-none transition-[border-color] duration-[var(--duration)]',
-          'focus:border-[var(--border-focus)]',
-          'data-[placeholder]:text-muted',
+          'outline-none transition-[border-color] duration-[var(--duration-micro)] ease-[var(--ease)]',
+          'focus:border-[var(--border-strong)]',
+          'data-[placeholder]:text-tertiary',
           'disabled:opacity-40 disabled:cursor-not-allowed',
           'select-none cursor-default whitespace-nowrap',
           className,
@@ -61,13 +57,14 @@ export function Select({
         <RadixSelect.Content
           className={[
             'relative z-50 min-w-[8rem] overflow-hidden',
-            'rounded-lg border border-[var(--border-strong)] bg-elevated',
+            'rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-elevated)]',
+            'shadow-[0_4px_16px_rgba(0,0,0,0.4)]',
             'animate-in fade-in-0 zoom-in-95',
             'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
           ].join(' ')}
           position="popper"
           sideOffset={4}
-          style={{ animationDuration: '120ms' }}
+          style={{ animationDuration: 'var(--duration-micro)' }}
         >
           <RadixSelect.Viewport className="p-1">
             {options.map((opt) => (
@@ -75,11 +72,12 @@ export function Select({
                 key={opt.value}
                 value={opt.value}
                 className={[
-                  'relative flex items-center px-3 py-1.5 rounded',
-                  'text-[13px] text-primary cursor-default select-none outline-none',
-                  'data-[highlighted]:bg-[var(--bg-hover)]',
-                  'data-[state=checked]:text-accent',
-                  'transition-colors duration-[var(--duration-fast)]',
+                  'relative flex items-center px-3 rounded cursor-default select-none outline-none',
+                  'text-[13px] text-primary',
+                  'h-8',
+                  'data-[highlighted]:bg-[var(--surface-elevated)]',
+                  'data-[state=checked]:bg-[var(--accent-dim)]',
+                  'transition-colors duration-[var(--duration-micro)]',
                 ].join(' ')}
               >
                 <RadixSelect.ItemText>{opt.label}</RadixSelect.ItemText>
@@ -95,14 +93,10 @@ export function Select({
 function ChevronDown({ size = 16 }: { size?: number }) {
   return (
     <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      width={size} height={size}
+      viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round"
     >
       <polyline points="6 9 12 15 18 9" />
     </svg>

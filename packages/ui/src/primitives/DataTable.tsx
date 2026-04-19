@@ -23,7 +23,7 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   return (
     <div className={`overflow-x-auto ${className}`}>
-      <table className="w-full border-collapse text-[13px]">
+      <table className="w-full border-collapse">
         <thead>
           <tr>
             {columns.map((col) => (
@@ -31,8 +31,9 @@ export function DataTable<T>({
                 key={String(col.key)}
                 style={{ width: col.width }}
                 className={[
-                  'py-2 px-3 text-[11px] font-medium uppercase tracking-[0.04em]',
-                  'text-tertiary border-b border-[var(--border)]',
+                  'py-2 px-3 h-8',
+                  'text-[11px] font-medium uppercase tracking-[0.08em]',
+                  'text-tertiary',
                   col.numeric ? 'text-right' : 'text-left',
                 ].join(' ')}
               >
@@ -45,7 +46,10 @@ export function DataTable<T>({
           {rows.map((row, idx) => (
             <tr
               key={rowKey(row, idx)}
-              className="border-b border-[var(--border)] hover:bg-[var(--bg-hover)] transition-colors duration-[var(--duration-fast)]"
+              style={{
+                background: idx % 2 === 1 ? 'color-mix(in srgb, var(--bg-inset) 50%, transparent)' : 'transparent',
+              }}
+              className="hover:bg-[var(--surface-elevated)] transition-colors duration-[var(--duration-micro)]"
             >
               {columns.map((col) => {
                 const value = (row as Record<string, unknown>)[String(col.key)];
@@ -54,11 +58,12 @@ export function DataTable<T>({
                   <td
                     key={String(col.key)}
                     className={[
-                      'py-2 px-3 h-8',
+                      'px-3 h-8 text-[13px]',
                       col.numeric
-                        ? 'text-right font-mono [font-variant-numeric:tabular-nums] text-primary'
+                        ? 'text-right text-primary [font-variant-numeric:tabular-nums]'
                         : 'text-left text-primary',
                     ].join(' ')}
+                    style={col.numeric ? { fontFamily: 'var(--font-mono)' } : undefined}
                   >
                     {content}
                   </td>
