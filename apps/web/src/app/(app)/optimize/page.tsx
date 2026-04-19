@@ -18,6 +18,7 @@ import { usePortfolioStore } from '../../../lib/stores/portfolio';
 import { useEngine } from '../../../lib/wasm/use-engine';
 import { slideUp, stagger } from '../../../lib/motion';
 import { useKeyboard } from '../../../lib/hooks/use-keyboard';
+import { loadDefaults } from '@/components/SettingsDialog';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -565,6 +566,19 @@ export default function OptimizePage() {
   // ── Algorithm overlay toggles ─────────────────────────────────────────────
   const [visibleAlgorithms, setVisibleAlgorithms] = useState<Set<string>>(new Set());
   const runningRef = useRef<Set<string>>(new Set());
+
+  // ── Apply localStorage defaults once on mount ────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const d = loadDefaults();
+    store.setConstraints({
+      rf:             d.rf,
+      shrinkageAlpha: d.shrinkageAlpha,
+      nPoints:        d.nPoints,
+    });
+    setFrequency(d.frequency);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Sync selectedIdx to bestIdx ──────────────────────────────────────────
   useEffect(() => {

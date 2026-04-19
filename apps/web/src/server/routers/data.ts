@@ -95,6 +95,21 @@ export const dataRouter = router({
     return z.array(SnapshotItem).parse(await res.json());
   }),
 
+  pingDataService: publicProcedure
+    .input(z.object({ url: z.string() }))
+    .mutation(async ({ input }) => {
+      const base = input.url.replace(/\/$/, '');
+      try {
+        const res = await fetch(`${base}/health`, {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(3000),
+        });
+        return { ok: res.ok, status: res.status };
+      } catch {
+        return { ok: false, status: 0 };
+      }
+    }),
+
   fetchFactors: publicProcedure
     .input(
       z.object({

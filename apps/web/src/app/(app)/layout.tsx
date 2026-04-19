@@ -13,6 +13,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { CommandPalette } from '@/components/CommandPalette';
+import { SettingsDialog } from '@/components/SettingsDialog';
 
 // ---------------------------------------------------------------------------
 // Nav config
@@ -164,7 +165,9 @@ function Sidebar({ pathname, onOpenPalette }: { pathname: string; onOpenPalette?
 // Top bar
 // ---------------------------------------------------------------------------
 
-function TopBar({ title }: { title: string }) {
+function TopBar({ title, onOpenSettings }: { title: string; onOpenSettings?: () => void }) {
+  const [hoveringSettings, setHoveringSettings] = useState(false);
+
   return (
     <header
       style={{
@@ -179,35 +182,57 @@ function TopBar({ title }: { title: string }) {
         flexShrink: 0,
       }}
     >
-      <span
-        style={{
-          fontSize: 14,
-          fontWeight: 500,
-          color: 'var(--text-secondary)',
-        }}
-      >
+      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)' }}>
         {title}
       </span>
 
-      <button
-        aria-label="Settings"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 32,
-          height: 32,
-          borderRadius: 6,
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--text-tertiary)',
-          transition: `color var(--duration-micro) var(--ease)`,
-        }}
-        className="hover:text-secondary"
-      >
-        <Settings size={16} strokeWidth={1.5} />
-      </button>
+      {/* Settings button with tooltip */}
+      <div style={{ position: 'relative' }}>
+        <button
+          aria-label="Settings"
+          onClick={onOpenSettings}
+          onMouseEnter={() => setHoveringSettings(true)}
+          onMouseLeave={() => setHoveringSettings(false)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 32,
+            height: 32,
+            borderRadius: 6,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: hoveringSettings ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+            transition: `color var(--duration-micro) var(--ease)`,
+          }}
+        >
+          <Settings size={16} strokeWidth={1.5} />
+        </button>
+
+        {/* Tooltip */}
+        {hoveringSettings && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '100%',
+              right: 0,
+              marginTop: 6,
+              background: 'var(--surface-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '4px 8px',
+              fontSize: 12,
+              color: 'var(--text-secondary)',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              zIndex: 50,
+            }}
+          >
+            Settings
+          </div>
+        )}
+      </div>
     </header>
   );
 }
@@ -219,10 +244,13 @@ function TopBar({ title }: { title: string }) {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const pageTitle = getPageTitle(pathname);
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteOpen,  setPaletteOpen]  = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const openPalette  = useCallback(() => setPaletteOpen(true),  []);
-  const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const openPalette   = useCallback(() => setPaletteOpen(true),   []);
+  const closePalette  = useCallback(() => setPaletteOpen(false),  []);
+  const openSettings  = useCallback(() => setSettingsOpen(true),  []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   // Global ⌘K / Ctrl+K handler
   useEffect(() => {
@@ -241,38 +269,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {/* Narrow-screen guard */}
       <div
-        className="lg:hidden"
-        style={{
-          display: 'flex',
-          height: '100vh',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'var(--bg)',
-          padding: 24,
-        }}
-      >
-        <div className="text-center max-w-xs">
-          <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 8 }}>
-            Screen too narrow
-          </p>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            PortOpt requires a screen width of at least 1024 px. Please use a larger display or zoom out.
-          </p>
-        </div>
-      </div>
-
-      {/* Full app shell — desktop only */}
-      <div
-        className="hidden lg:flex"
-        style={{ height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}
+        style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}
       >
         <Sidebar pathname={pathname} onOpenPalette={openPalette} />
 
         {/* Right column: top bar + scrollable content */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <TopBar title={pageTitle} />
+          <TopBar title={pageTitle} onOpenSettings={openSettings} />
 
           <main
             id="main-content"
@@ -305,7 +309,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      <CommandPalette open={paletteOpen} onClose={closePalette} />
+      <CommandPalette open={paletteOpen}  onClose={closePalette}  />
+      <SettingsDialog  open={settingsOpen} onClose={closeSettings} />
     </>
   );
 }
