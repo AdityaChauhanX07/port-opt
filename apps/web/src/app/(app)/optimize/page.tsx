@@ -818,6 +818,7 @@ export default function OptimizePage() {
 
       {/* ══ LEFT PANEL ══════════════════════════════════════════════════════ */}
       <aside
+        data-animate
         style={{
           width: 320,
           flexShrink: 0,
@@ -825,7 +826,9 @@ export default function OptimizePage() {
           flexDirection: 'column',
           overflow: 'hidden',
           borderRight: '1px solid var(--border-subtle)',
-        }}
+          '--stagger': 1,
+          '--delay': '100ms',
+        } as React.CSSProperties}
       >
         {/* Scrollable sections */}
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
@@ -1082,7 +1085,8 @@ export default function OptimizePage() {
 
       {/* ══ RIGHT PANEL ═════════════════════════════════════════════════════ */}
       <div
-        style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 32 }}
+        data-animate
+        style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 32, '--stagger': 2, '--delay': '100ms' } as React.CSSProperties}
         className="flex flex-col gap-5"
       >
         {/* Error banners */}

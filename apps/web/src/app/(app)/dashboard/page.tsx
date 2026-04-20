@@ -2,12 +2,10 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 import { TrendingUp, LineChart, ShieldAlert, ArrowRight, type LucideIcon } from 'lucide-react';
 import { MetricCard } from '@portopt/ui';
 import { api } from '@/lib/trpc/client';
 import { usePortfolioStore } from '@/lib/stores/portfolio';
-import { slideUp, stagger } from '@/lib/motion';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -291,15 +289,13 @@ export default function DashboardPage() {
   const algoLabel = ALGO_LABELS[activeAlgorithm] ?? activeAlgorithm;
 
   return (
-    <motion.div
-      variants={stagger(0.06)}
-      initial="initial"
-      animate="animate"
+    <div
+      className="slide-enter-content"
       style={{ display: 'flex', flexDirection: 'column', gap: 40, paddingBottom: 48 }}
     >
 
-      {/* ── Header ────────────────────────────────────────────────────────── */}
-      <motion.div variants={slideUp}>
+      {/* ── Header ── stagger 1 */}
+      <div>
         <p className="text-body" style={{ color: 'var(--text-secondary)', marginBottom: 6 }}>
           {getGreeting()}
         </p>
@@ -312,22 +308,13 @@ export default function DashboardPage() {
             No portfolio loaded
           </h1>
         )}
-      </motion.div>
+      </div>
 
-      {/* ── Metric strip (portfolio loaded only) ─────────────────────────── */}
+      {/* ── Metric strip (portfolio loaded only) ── stagger 2 */}
       {hasPortfolio && (
-        <motion.div
-          variants={slideUp}
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 32 }}
-        >
-          <MetricCard
-            label="Assets"
-            value={String(tickers.length)}
-          />
-          <MetricCard
-            label="Algorithm"
-            value={algoLabel}
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 32 }}>
+          <MetricCard label="Assets" value={String(tickers.length)} />
+          <MetricCard label="Algorithm" value={algoLabel} />
           <MetricCard
             label="Date range"
             value={`${dateRange.start.slice(0, 7)}`}
@@ -336,45 +323,27 @@ export default function DashboardPage() {
           <MetricCard
             label="Frontier Sharpe"
             value={frontierSharpe != null ? frontierSharpe.toFixed(2) : '—'}
-            color={
-              frontierSharpe == null ? undefined :
-              frontierSharpe >= 0 ? 'positive' : 'negative'
-            }
-          />
-        </motion.div>
-      )}
-
-      {/* ── Quick actions ─────────────────────────────────────────────────── */}
-      <motion.section variants={slideUp}>
-        <SectionLabel>Quick Actions</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-          <ActionCard
-            href="/optimize"
-            Icon={TrendingUp}
-            title="Build Portfolio"
-            description="Select assets, run the efficient frontier, pick weights."
-          />
-          <ActionCard
-            href="/backtest"
-            Icon={LineChart}
-            title="Backtest"
-            description="Walk-forward simulation with transaction costs and slippage."
-          />
-          <ActionCard
-            href="/risk"
-            Icon={ShieldAlert}
-            title="Risk Analysis"
-            description="VaR, CVaR, stress tests, correlation matrix, rolling Sharpe."
+            color={frontierSharpe == null ? undefined : frontierSharpe >= 0 ? 'positive' : 'negative'}
           />
         </div>
-      </motion.section>
+      )}
 
-      {/* ── Market snapshot ───────────────────────────────────────────────── */}
-      <motion.section variants={slideUp}>
+      {/* ── Quick actions ── stagger 3 (or 2 when no portfolio) */}
+      <section>
+        <SectionLabel>Quick Actions</SectionLabel>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          <ActionCard href="/optimize" Icon={TrendingUp} title="Build Portfolio" description="Select assets, run the efficient frontier, pick weights." />
+          <ActionCard href="/backtest" Icon={LineChart}  title="Backtest"        description="Walk-forward simulation with transaction costs and slippage." />
+          <ActionCard href="/risk"     Icon={ShieldAlert} title="Risk Analysis"  description="VaR, CVaR, stress tests, correlation matrix, rolling Sharpe." />
+        </div>
+      </section>
+
+      {/* ── Market snapshot ── stagger 4 (or 3 when no portfolio) */}
+      <section>
         <SectionLabel>Market Snapshot</SectionLabel>
         <MarketSnapshot />
-      </motion.section>
+      </section>
 
-    </motion.div>
+    </div>
   );
 }

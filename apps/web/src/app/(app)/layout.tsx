@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -60,14 +59,17 @@ function Sidebar({ pathname, onOpenPalette }: { pathname: string; onOpenPalette?
         flexDirection: 'column',
       }}
     >
-      {/* Wordmark */}
+      {/* Wordmark — appears first */}
       <div
+        data-animate
         style={{
           paddingTop: 24,
           paddingBottom: 16,
           paddingLeft: 12,
           paddingRight: 12,
-        }}
+          '--stagger': 0,
+          '--delay': '80ms',
+        } as React.CSSProperties}
       >
         <div className="flex items-center gap-2 select-none">
           {/* Brand mark — 6px accent square */}
@@ -96,12 +98,13 @@ function Sidebar({ pathname, onOpenPalette }: { pathname: string; onOpenPalette?
 
       {/* Nav items */}
       <div className="flex-1 overflow-y-auto px-[6px] py-1">
-        {NAV_ITEMS.map(({ href, label, Icon }) => {
+        {NAV_ITEMS.map(({ href, label, Icon }, idx) => {
           const active = pathname === href || pathname.startsWith(href + '/');
           return (
             <Link
               key={href}
               href={href}
+              data-animate
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -119,7 +122,9 @@ function Sidebar({ pathname, onOpenPalette }: { pathname: string; onOpenPalette?
                 borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
                 transition: `background-color var(--duration-micro) var(--ease), color var(--duration-micro) var(--ease)`,
                 marginBottom: 2,
-              }}
+                '--stagger': idx + 1,
+                '--delay': '80ms',
+              } as React.CSSProperties}
               className={active ? '' : 'hover:bg-[var(--surface-elevated)] hover:text-primary'}
             >
               <Icon
@@ -293,17 +298,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 paddingTop: 32,
               }}
             >
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div
-                  key={pathname}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15, ease: [0.2, 0, 0, 1] }}
-                >
-                  {children}
-                </motion.div>
-              </AnimatePresence>
+              <div key={pathname}>
+                {children}
+              </div>
             </div>
           </main>
         </div>

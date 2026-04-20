@@ -337,7 +337,7 @@ export default function RiskPage() {
     <div style={{ height: 'calc(100vh - 88px)', display: 'flex', overflow: 'hidden' }}>
 
       {/* ══ LEFT PANEL ══════════════════════════════════════════════════════ */}
-      <aside style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border-subtle)' }}>
+      <aside data-animate style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border-subtle)', '--stagger': 1, '--delay': '100ms' } as React.CSSProperties}>
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
 
           {/* Confidence */}
@@ -392,7 +392,7 @@ export default function RiskPage() {
 
       {/* ══ RIGHT PANEL ═════════════════════════════════════════════════════ */}
       <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 32 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div className="slide-enter-content" style={{ display: 'flex', flexDirection: 'column', gap: 24, '--delay': '100ms' } as React.CSSProperties}>
 
           {/* 1 — Risk Metrics */}
           <RightSection title="Risk Metrics">

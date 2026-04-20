@@ -9,7 +9,6 @@ import { api } from '@/lib/trpc/client';
 import { usePortfolioStore } from '@/lib/stores/portfolio';
 import type { PortfolioState } from '@/lib/stores/portfolio';
 import { useRiskStore } from '@/lib/stores/risk';
-import { slideUp, stagger } from '@/lib/motion';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -275,20 +274,20 @@ export default function ResearchPage() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        <motion.div
+        <div
+          className="slide-enter-content"
           style={{ maxWidth: 760, margin: '0 auto', paddingLeft: 24, paddingRight: 24, paddingTop: 8, paddingBottom: 120, display: 'flex', flexDirection: 'column', gap: 32 }}
-          initial="initial" animate="animate" variants={stagger(0.04)}
         >
-          {/* Title */}
-          <motion.div variants={slideUp}>
+          {/* Title — stagger 1 */}
+          <div>
             <h1 className="text-display" style={{ color: 'var(--text-primary)', marginBottom: 8 }}>Research</h1>
             <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
               Ask natural language questions about your portfolio.
             </p>
-          </motion.div>
+          </div>
 
-          {/* Context card */}
-          <motion.div variants={slideUp}>
+          {/* Context card — stagger 2 */}
+          <div>
             {!hasPortfolio ? (
               <Card padding="md">
                 <p className="text-h3" style={{ color: 'var(--text-tertiary)', marginBottom: 8 }}>Portfolio context</p>
@@ -301,21 +300,21 @@ export default function ResearchPage() {
             ) : (
               <ContextCard store={store} />
             )}
-          </motion.div>
+          </div>
 
-          {/* API key notice */}
+          {/* API key notice — stagger 3 (conditional, shifts remaining) */}
           {apiKeyMissing && (
-            <motion.div variants={slideUp} style={{ borderRadius: 'var(--radius-md)', border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.06)', padding: '10px 16px' }}>
+            <div style={{ borderRadius: 'var(--radius-md)', border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.06)', padding: '10px 16px' }}>
               <p style={{ fontSize: 13, color: 'var(--negative)' }}>
                 Configure <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>ANTHROPIC_API_KEY</code> in{' '}
                 <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>apps/web/.env.local</code> to enable AI analysis.
               </p>
-            </motion.div>
+            </div>
           )}
 
-          {/* Suggested questions or conversation */}
+          {/* Suggested questions or conversation — stagger 3 or 4 */}
           {conversation.length === 0 && hasPortfolio && !apiKeyMissing ? (
-            <motion.div variants={slideUp}>
+            <div>
               <p className="text-h3" style={{ color: 'var(--text-tertiary)', marginBottom: 12 }}>Suggested questions</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {SUGGESTED_QUESTIONS.map((q) => (
@@ -339,7 +338,7 @@ export default function ResearchPage() {
                   </button>
                 ))}
               </div>
-            </motion.div>
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
               <AnimatePresence initial={false}>
@@ -391,7 +390,7 @@ export default function ResearchPage() {
           )}
 
           <div ref={bottomRef} />
-        </motion.div>
+        </div>
       </div>
 
       {/* Fixed input bar */}
