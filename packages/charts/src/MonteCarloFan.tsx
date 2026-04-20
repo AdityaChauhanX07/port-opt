@@ -29,15 +29,15 @@ const M = { top: 16, right: 24, bottom: 36, left: 60 };
 const Z = { p05: -1.6449, p25: -0.6745, p75: 0.6745, p95: 1.6449 };
 
 const COL = {
-  outer: 'rgba(94,142,255,0.14)',   // 5-95 band
-  inner: 'rgba(94,142,255,0.28)',   // 25-75 band
-  median: '#5e8eff',
-  breakeven: 'rgba(255,255,255,0.08)',
-  grid: 'rgba(255,255,255,0.05)',
-  axis: '#525252',
-  tick: '#737373',
-  tooltip: '#111111',
-  tooltipBorder: 'rgba(255,255,255,0.08)',
+  outer:         'rgba(59,130,246,0.10)',  // 5-95 band — accent at low opacity, works both themes
+  inner:         'rgba(59,130,246,0.22)',  // 25-75 band
+  median:        'var(--accent)',
+  breakeven:     'var(--border)',
+  grid:          'var(--border-subtle)',
+  axis:          'var(--border)',
+  tick:          'var(--text-tertiary)',
+  tooltip:       'var(--surface-elevated)',
+  tooltipBorder: 'var(--border)',
 };
 
 // ---------------------------------------------------------------------------
@@ -247,20 +247,20 @@ export function MonteCarloFan({
             padding: '8px 10px',
           }}
         >
-          <div className="mb-1.5 text-[#737373]">
+          <div className="mb-1.5" style={{ color: 'var(--text-tertiary)' }}>
             t = {(tooltip.t / ppy).toFixed(2)}y ({tooltip.t} periods)
           </div>
-          <div className="flex justify-between gap-4 text-[#a3a3a3]">
+          <div className="flex justify-between gap-4" style={{ color: 'var(--text-secondary)' }}>
             <span>p95</span>
-            <span className="tabular-nums text-[#f5f5f5]">{tooltip.p95.toFixed(3)}×</span>
+            <span className="tabular-nums" style={{ color: 'var(--text-primary)' }}>{tooltip.p95.toFixed(3)}×</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-[#5e8eff]">median</span>
-            <span className="tabular-nums text-[#f5f5f5]">{tooltip.med.toFixed(3)}×</span>
+            <span style={{ color: 'var(--accent)' }}>median</span>
+            <span className="tabular-nums" style={{ color: 'var(--text-primary)' }}>{tooltip.med.toFixed(3)}×</span>
           </div>
-          <div className="flex justify-between gap-4 text-[#a3a3a3]">
+          <div className="flex justify-between gap-4" style={{ color: 'var(--text-secondary)' }}>
             <span>p05</span>
-            <span className="tabular-nums text-[#f5f5f5]">{tooltip.p05.toFixed(3)}×</span>
+            <span className="tabular-nums" style={{ color: 'var(--text-primary)' }}>{tooltip.p05.toFixed(3)}×</span>
           </div>
         </div>
       )}

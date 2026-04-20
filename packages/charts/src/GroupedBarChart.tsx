@@ -31,10 +31,10 @@ const M = { top: 16, right: 24, bottom: 48, left: 64 };
 const GAIN_COLOR = '#3fb950';
 const LOSS_COLOR = '#f85149';
 const COLORS = {
-  grid:  'rgba(255,255,255,0.05)',
-  axis:  '#525252',
-  tick:  '#737373',
-  label: '#a3a3a3',
+  grid:  'var(--border-subtle)',
+  axis:  'var(--border)',
+  tick:  'var(--text-tertiary)',
+  label: 'var(--text-secondary)',
 };
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ export function GroupedBarChart({ data, height = 240 }: GroupedBarChartProps) {
     g.append('line')
       .attr('x1', 0).attr('x2', iW)
       .attr('y1', zeroY).attr('y2', zeroY)
-      .attr('stroke', 'rgba(255,255,255,0.12)')
+      .attr('stroke', 'var(--border)')
       .attr('stroke-width', 1);
 
     // Grid lines
@@ -203,14 +203,14 @@ export function GroupedBarChart({ data, height = 240 }: GroupedBarChartProps) {
             left: tooltipRight ? tooltip.x - 148 : tooltip.x + 12,
             top:  Math.max(8, tooltip.y - 24),
             minWidth: 140,
-            background: '#111111',
-            borderColor: 'rgba(255,255,255,0.08)',
+            background: 'var(--surface-elevated)',
+            borderColor: 'var(--border)',
             padding: '8px 10px',
           }}
         >
-          <div className="mb-1 text-[#737373]">{tooltip.group}</div>
+          <div className="mb-1" style={{ color: 'var(--text-tertiary)' }}>{tooltip.group}</div>
           <div className="flex justify-between gap-4">
-            <span className="text-[#a3a3a3]">{tooltip.label}</span>
+            <span style={{ color: 'var(--text-secondary)' }}>{tooltip.label}</span>
             <span
               className="tabular-nums font-medium"
               style={{ color: tooltip.value >= 0 ? GAIN_COLOR : LOSS_COLOR }}

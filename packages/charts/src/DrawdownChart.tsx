@@ -28,12 +28,12 @@ export interface DrawdownChartProps {
 
 const M = { top: 12, right: 24, bottom: 36, left: 60 };
 const COLORS = {
-  grid: 'rgba(255,255,255,0.05)',
-  axis: '#525252',
-  tick: '#737373',
-  crosshair: 'rgba(255,255,255,0.2)',
-  tooltip: '#111111',
-  tooltipBorder: 'rgba(255,255,255,0.08)',
+  grid:         'var(--border-subtle)',
+  axis:         'var(--border)',
+  tick:         'var(--text-tertiary)',
+  crosshair:    'var(--border-strong)',
+  tooltip:      'var(--surface-elevated)',
+  tooltipBorder:'var(--border)',
 };
 
 // ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ export function DrawdownChart({
     g.append('line')
       .attr('x1', 0).attr('x2', iW)
       .attr('y1', y(0)).attr('y2', y(0))
-      .attr('stroke', 'rgba(255,255,255,0.12)')
+      .attr('stroke', 'var(--border)')
       .attr('stroke-width', 1);
 
     // Area + line for each series
@@ -185,7 +185,7 @@ export function DrawdownChart({
         .attr('class', `ch-dot-${s.label.replace(/\s+/g, '_')}`)
         .attr('r', 3.5)
         .attr('fill', s.color)
-        .attr('stroke', '#0a0a0a')
+        .attr('stroke', 'var(--bg)')
         .attr('stroke-width', 1.5);
     }
 
@@ -261,13 +261,13 @@ export function DrawdownChart({
             padding: '8px 10px',
           }}
         >
-          <div className="mb-1 text-[#737373]">{dates[tooltip.idx] ?? ''}</div>
+          <div className="mb-1" style={{ color: 'var(--text-tertiary)' }}>{dates[tooltip.idx] ?? ''}</div>
           {series.map((s) => {
             const v = s.values[tooltip!.idx];
             return (
               <div key={s.label} className="flex items-center justify-between gap-3">
                 <span style={{ color: s.color }}>{s.label}</span>
-                <span className="tabular-nums font-medium" style={{ color: '#f5f5f5' }}>
+                <span className="tabular-nums font-medium" style={{ color: 'var(--text-primary)' }}>
                   {v != null && isFinite(+v) ? `${(+v * 100).toFixed(2)}%` : '—'}
                 </span>
               </div>

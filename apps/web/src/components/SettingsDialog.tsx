@@ -4,12 +4,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { X, Check, AlertCircle } from 'lucide-react';
 import { Button, Input, Select } from '@portopt/ui';
 import { api } from '@/lib/trpc/client';
+import { useTheme } from '@/lib/hooks/use-theme';
 
 // ---------------------------------------------------------------------------
 // localStorage keys + helpers
 // ---------------------------------------------------------------------------
 
-const KEY_THEME    = 'portopt:theme';
 const KEY_DEFAULTS = 'portopt:defaults';
 const KEY_DATA_URL = 'portopt:dataServiceUrl';
 
@@ -68,7 +68,7 @@ interface Props {
 
 export function SettingsDialog({ open, onClose }: Props) {
   // ── Theme ─────────────────────────────────────────────────────────────────
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const { theme, setTheme } = useTheme();
 
   // ── Defaults ──────────────────────────────────────────────────────────────
   const [rf,             setRf]             = useState(DEFAULT_VALUES.rf);
@@ -90,9 +90,6 @@ export function SettingsDialog({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     try {
-      const t = localStorage.getItem(KEY_THEME);
-      if (t === 'dark' || t === 'light') setTheme(t);
-
       const d = loadDefaults();
       setRf(d.rf);
       setShrinkageAlpha(d.shrinkageAlpha);
@@ -187,39 +184,29 @@ export function SettingsDialog({ open, onClose }: Props) {
           <SectionHeader>Theme</SectionHeader>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
-            {/* Dark — active */}
-            <button
-              type="button"
-              onClick={() => { setTheme('dark'); localStorage.setItem(KEY_THEME, 'dark'); }}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '10px 14px', borderRadius: 'var(--radius-md)',
-                border: `1px solid ${theme === 'dark' ? 'var(--accent)' : 'var(--border)'}`,
-                background: theme === 'dark' ? 'var(--accent-dim)' : 'transparent',
-                cursor: 'pointer',
-                transition: `border-color var(--duration-micro) var(--ease), background var(--duration-micro) var(--ease)`,
-              }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>Dark</span>
-              {theme === 'dark' && (
-                <Check size={14} strokeWidth={2} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              )}
-            </button>
-
-            {/* Light — disabled */}
-            <div
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '10px 14px', borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                background: 'transparent',
-                opacity: 0.5,
-                cursor: 'not-allowed',
-              }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>Light</span>
-              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Coming soon</span>
-            </div>
+            {(['dark', 'light'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTheme(t)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 14px', borderRadius: 'var(--radius-md)',
+                  border: `1px solid ${theme === t ? 'var(--accent)' : 'var(--border)'}`,
+                  background: theme === t ? 'var(--accent-dim)' : 'transparent',
+                  cursor: 'pointer',
+                  transition: `border-color var(--duration-micro) var(--ease), background var(--duration-micro) var(--ease)`,
+                  width: '100%',
+                }}
+              >
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
+                  {t === 'dark' ? 'Dark' : 'Light'}
+                </span>
+                {theme === t && (
+                  <Check size={14} strokeWidth={2} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                )}
+              </button>
+            ))}
 
           </div>
         </div>

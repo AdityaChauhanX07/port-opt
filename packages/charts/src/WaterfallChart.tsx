@@ -89,7 +89,7 @@ export function WaterfallChart({ bars, height = 240, showTotal = true }: Waterfa
       .attr('x2', innerW)
       .attr('y1', (d) => yScale(d))
       .attr('y2', (d) => yScale(d))
-      .attr('stroke', '#2a2a2a')
+      .attr('stroke', 'var(--border-subtle)')
       .attr('stroke-width', 1);
 
     // Connector lines (between waterfall bars, not to total)
@@ -106,7 +106,7 @@ export function WaterfallChart({ bars, height = 240, showTotal = true }: Waterfa
         .attr('x2', x2)
         .attr('y1', y)
         .attr('y2', y)
-        .attr('stroke', '#3a3a3a')
+        .attr('stroke', 'var(--border)')
         .attr('stroke-width', 1)
         .attr('stroke-dasharray', '3 3');
     }
@@ -139,7 +139,7 @@ export function WaterfallChart({ bars, height = 240, showTotal = true }: Waterfa
           : yScale(d.end) - 4;             // above
       })
       .attr('text-anchor', 'middle')
-      .attr('fill', '#ececec')
+      .attr('fill', 'var(--text-primary)')
       .attr('font-size', '10px')
       .attr('font-family', 'monospace')
       .text((d) => `${(d.value * 100).toFixed(1)}%`);
@@ -154,7 +154,7 @@ export function WaterfallChart({ bars, height = 240, showTotal = true }: Waterfa
       .attr('x', (d) => (xScale(d.label) ?? 0) + xScale.bandwidth() / 2)
       .attr('y', 14)
       .attr('text-anchor', 'middle')
-      .attr('fill', '#6b6b6b')
+      .attr('fill', 'var(--text-tertiary)')
       .attr('font-size', '10px')
       .text((d) => d.label)
       .call((sel) => {

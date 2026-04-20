@@ -34,8 +34,8 @@ const GAIN_COLOR    = '#3fb950';
 const LOSS_COLOR    = '#f85149';
 const NEUTRAL_COLOR = '#8b949e';
 
-const LABEL_COLOR   = '#a3a3a3';
-const TERTIARY      = '#737373';
+const LABEL_COLOR   = 'var(--text-secondary)';
+const TERTIARY      = 'var(--text-tertiary)';
 
 // ---------------------------------------------------------------------------
 // Layout helpers

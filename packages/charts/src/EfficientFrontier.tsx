@@ -55,17 +55,18 @@ export interface EfficientFrontierProps {
 const M = { top: 16, right: 16, bottom: 36, left: 52 };
 const HEATMAP_H = 80;
 
-// Design token hex values
+// Use CSS custom properties so the chart responds to theme changes automatically.
+// SVG presentation attributes resolve CSS vars at paint time in modern browsers.
 const C = {
-  borderSubtle: '#1F1F23',
-  border:       '#2A2A2F',
-  borderStrong: '#3A3A42',
-  textTertiary: '#6B6B73',
-  textSecondary:'#A1A1A8',
-  accent:       '#3B82F6',
-  accentPurple: '#8B5CF6',
-  bg:           '#0A0A0B',
-  surface:      '#111113',
+  borderSubtle: 'var(--border-subtle)',
+  border:       'var(--border)',
+  borderStrong: 'var(--border-strong)',
+  textTertiary: 'var(--text-tertiary)',
+  textSecondary:'var(--text-secondary)',
+  accent:       'var(--accent)',
+  accentPurple: '#8B5CF6',   // no token; kept as fixed purple
+  bg:           'var(--bg)',
+  surface:      'var(--surface)',
 } as const;
 
 const ALGO_META: Record<string, { label: string; color: string }> = {

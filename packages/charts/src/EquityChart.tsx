@@ -33,13 +33,13 @@ export interface EquityChartProps {
 
 const M = { top: 16, right: 24, bottom: 36, left: 60 };
 const COLORS = {
-  grid: 'rgba(255,255,255,0.05)',
-  axis: '#525252',
-  tick: '#737373',
-  oos: 'rgba(255,255,255,0.15)',
-  crosshair: 'rgba(255,255,255,0.2)',
-  tooltip: '#111111',
-  tooltipBorder: 'rgba(255,255,255,0.08)',
+  grid:         'var(--border-subtle)',
+  axis:         'var(--border)',
+  tick:         'var(--text-tertiary)',
+  oos:          'var(--border-strong)',
+  crosshair:    'var(--border-strong)',
+  tooltip:      'var(--surface-elevated)',
+  tooltipBorder:'var(--border)',
 };
 
 // ---------------------------------------------------------------------------
@@ -154,7 +154,7 @@ export function EquityChart({
         g.append('line')
           .attr('x1', 0).attr('x2', iW)
           .attr('y1', baseY).attr('y2', baseY)
-          .attr('stroke', 'rgba(255,255,255,0.1)')
+          .attr('stroke', 'var(--border)')
           .attr('stroke-dasharray', '4 4')
           .attr('stroke-width', 1);
       }
@@ -173,7 +173,7 @@ export function EquityChart({
       g.append('text')
         .attr('x', oosX + 4)
         .attr('y', 12)
-        .attr('fill', '#737373')
+        .attr('fill', 'var(--text-tertiary)')
         .attr('font-size', 10)
         .text('OOS');
     }
@@ -215,7 +215,7 @@ export function EquityChart({
         .attr('class', `ch-dot-${s.label.replace(/\s+/g, '_')}`)
         .attr('r', 4)
         .attr('fill', s.color)
-        .attr('stroke', '#0a0a0a')
+        .attr('stroke', 'var(--bg)')
         .attr('stroke-width', 1.5);
     }
 
@@ -295,7 +295,7 @@ export function EquityChart({
             padding: '8px 10px',
           }}
         >
-          <div className="mb-1.5 text-[#737373]">
+          <div className="mb-1.5" style={{ color: 'var(--text-tertiary)' }}>
             {dates[tooltip.idx] ?? ''}
           </div>
           {series.map((s) => {
@@ -309,7 +309,7 @@ export function EquityChart({
                   />
                   {s.label}
                 </span>
-                <span className="font-medium tabular-nums" style={{ color: '#f5f5f5' }}>
+                <span className="font-medium tabular-nums" style={{ color: 'var(--text-primary)' }}>
                   {v != null && isFinite(+v) ? (+v).toFixed(3) : '—'}
                 </span>
               </div>

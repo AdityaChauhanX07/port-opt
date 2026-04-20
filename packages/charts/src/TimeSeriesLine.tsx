@@ -38,12 +38,12 @@ export interface TimeSeriesLineProps {
 
 const M = { top: 16, right: 24, bottom: 36, left: 56 };
 const COL = {
-  grid: 'rgba(255,255,255,0.05)',
-  axis: '#525252',
-  tick: '#737373',
-  crosshair: 'rgba(255,255,255,0.2)',
-  tooltip: '#111111',
-  tooltipBorder: 'rgba(255,255,255,0.08)',
+  grid:         'var(--border-subtle)',
+  axis:         'var(--border)',
+  tick:         'var(--text-tertiary)',
+  crosshair:    'var(--border-strong)',
+  tooltip:      'var(--surface-elevated)',
+  tooltipBorder:'var(--border)',
 };
 
 // ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ export function TimeSeriesLine({
         .attr('class', `ch-dot-${s.label.replace(/\s+/g, '_')}`)
         .attr('r', 3.5)
         .attr('fill', s.color)
-        .attr('stroke', '#0a0a0a')
+        .attr('stroke', 'var(--bg)')
         .attr('stroke-width', 1.5);
     }
 
@@ -265,7 +265,7 @@ export function TimeSeriesLine({
             padding: '8px 10px',
           }}
         >
-          <div className="mb-1.5 text-[#737373]">{dates[tooltip.idx] ?? ''}</div>
+          <div className="mb-1.5" style={{ color: 'var(--text-tertiary)' }}>{dates[tooltip.idx] ?? ''}</div>
           {series.map((s) => {
             const v = s.values[tooltip!.idx];
             return (
@@ -277,7 +277,7 @@ export function TimeSeriesLine({
                   />
                   {s.label}
                 </span>
-                <span className="font-medium tabular-nums text-[#f5f5f5]">
+                <span className="font-medium tabular-nums" style={{ color: 'var(--text-primary)' }}>
                   {v != null && isFinite(v) ? yFormat(v) : '—'}
                 </span>
               </div>

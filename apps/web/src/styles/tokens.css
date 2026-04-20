@@ -74,3 +74,41 @@
   --duration: var(--duration-small);
   --duration-slow: var(--duration-medium);
 }
+
+/* ── Light theme ──────────────────────────────────────────────────────────── */
+
+[data-theme="light"] {
+  /* Surfaces */
+  --bg: #FAFAFA;
+  --surface: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --bg-inset: #F2F2F3;
+
+  /* Borders */
+  --border-subtle: #E8E8EC;
+  --border: #D4D4D8;
+  --border-strong: #A1A1AA;
+
+  /* Text — tertiary uses #71717A (5:1 on white, WCAG AA for UI labels) */
+  --text-primary: #18181B;
+  --text-secondary: #52525B;
+  --text-tertiary: #71717A;
+
+  /* Accent */
+  --accent: #2563EB;
+  --accent-dim: #DBEAFE;
+  --accent-hover: #1D4ED8;
+
+  /* Semantic — adjusted for contrast on white */
+  --positive: #059669;
+  --negative: #DC2626;
+  --warning: #D97706;
+  --positive-subtle: rgba(5, 150, 105, 0.08);
+  --negative-subtle: rgba(220, 38, 38, 0.08);
+
+  /* Backward-compat aliases — override to match light surfaces */
+  --bg-elevated: #FFFFFF;
+  --bg-hover: #F4F4F5;
+  --bg-subtle: #FFFFFF;
+  --warn-subtle: rgba(217, 119, 6, 0.08);
+}

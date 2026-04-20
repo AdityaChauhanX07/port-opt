@@ -40,10 +40,10 @@ const PALETTE = [
 ];
 
 const COLORS = {
-  axis: '#525252',
-  tick: '#737373',
-  tooltip: '#111111',
-  tooltipBorder: 'rgba(255,255,255,0.08)',
+  axis:         'var(--border)',
+  tick:         'var(--text-tertiary)',
+  tooltip:      'var(--surface-elevated)',
+  tooltipBorder:'var(--border)',
 };
 
 // ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ export function WeightEvolution({
       .join('line')
       .attr('x1', 0).attr('x2', iW)
       .attr('y1', (d) => y(d)).attr('y2', (d) => y(d))
-      .attr('stroke', 'rgba(255,255,255,0.05)')
+      .attr('stroke', 'var(--border-subtle)')
       .attr('stroke-width', 1);
 
     // Y axis
@@ -169,7 +169,7 @@ export function WeightEvolution({
         .datum(layer)
         .attr('fill', color)
         .attr('fill-opacity', 0.85)
-        .attr('stroke', '#0a0a0a')
+        .attr('stroke', 'var(--bg)')
         .attr('stroke-width', 0.5)
         .attr('d', areaFn);
     }
@@ -187,7 +187,7 @@ export function WeightEvolution({
         .attr('rx', 2);
       legend.append('text')
         .attr('x', 14).attr('y', i * 18 + 9)
-        .attr('fill', '#a3a3a3')
+        .attr('fill', 'var(--text-tertiary)')
         .attr('font-size', 11)
         .text(k);
     });
@@ -229,13 +229,13 @@ export function WeightEvolution({
             padding: '8px 10px',
           }}
         >
-          <div className="mb-1.5 text-[#737373]">
+          <div className="mb-1.5" style={{ color: 'var(--text-tertiary)' }}>
             {rebalanceDates[tooltip.idx] ?? `Rebalance ${tooltip.idx + 1}`}
           </div>
           {tickers.slice(0, weightsShape[1]).map((t, i) => (
             <div key={t} className="flex items-center justify-between gap-3">
               <span style={{ color: PALETTE[i % PALETTE.length] }}>{t}</span>
-              <span className="tabular-nums font-medium text-[#f5f5f5]">
+              <span className="tabular-nums font-medium" style={{ color: 'var(--text-primary)' }}>
                 {((tooltip!.weights[i] ?? 0) * 100).toFixed(1)}%
               </span>
             </div>

@@ -29,7 +29,7 @@ const REGIME_COLORS = [
   '#f85149', // 0: bear
   '#e3b341', // 1: neutral
   '#3fb950', // 2: bull
-  '#5e8eff', // 3: extra
+  '#6366f1', // 3: extra
 ];
 
 const REGIME_LABELS = ['Bear', 'Neutral', 'Bull', 'Regime 4'];
@@ -163,7 +163,7 @@ export function RegimeTimeline({
       .append('path')
       .datum(equityData)
       .attr('fill', 'none')
-      .attr('stroke', '#5e8eff')
+      .attr('stroke', 'var(--accent)')
       .attr('stroke-width', 1.5)
       .attr('d', line);
 
@@ -179,7 +179,7 @@ export function RegimeTimeline({
       .call(xAxis)
       .call((g) => g.select('.domain').remove())
       .call((g) =>
-        g.selectAll('text').attr('fill', '#6b6b6b').attr('font-size', '10px').attr('dy', '1.2em'),
+        g.selectAll('text').attr('fill', 'var(--text-tertiary)').attr('font-size', '10px').attr('dy', '1.2em'),
       );
 
     const yAxis = d3
@@ -192,7 +192,7 @@ export function RegimeTimeline({
       .call(yAxis)
       .call((g) => g.select('.domain').remove())
       .call((g) =>
-        g.selectAll('text').attr('fill', '#6b6b6b').attr('font-size', '10px').attr('dx', '-0.4em'),
+        g.selectAll('text').attr('fill', 'var(--text-tertiary)').attr('font-size', '10px').attr('dx', '-0.4em'),
       );
 
     // ---- Legend ----

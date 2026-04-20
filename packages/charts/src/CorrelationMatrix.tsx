@@ -3,6 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 
+/** Increments when data-theme changes so draw fns re-run with correct colors. */
+function useThemeVersion() {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    if (typeof MutationObserver === 'undefined') return;
+    const obs = new MutationObserver(() => setV((n) => n + 1));
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => obs.disconnect();
+  }, []);
+  return v;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -20,21 +32,26 @@ export interface CorrelationMatrixProps {
 // Colour helpers
 // ---------------------------------------------------------------------------
 
+function getTheme(): 'dark' | 'light' {
+  if (typeof document === 'undefined') return 'dark';
+  return (document.documentElement.getAttribute('data-theme') ?? 'dark') as 'dark' | 'light';
+}
+
 function corrColor(v: number): string {
-  // Diverging: muted red (-1) → near-neutral (0) → muted blue (+1)
   const t = Math.max(-1, Math.min(1, v));
+  if (getTheme() === 'light') {
+    // Light mode: opacity-based red/blue on white surface
+    if (t < 0) return `rgba(220,38,38,${(Math.abs(t) * 0.72).toFixed(3)})`;
+    if (t > 0) return `rgba(37,99,235,${(t * 0.72).toFixed(3)})`;
+    return 'transparent';
+  }
+  // Dark mode: original saturated blue/red on dark surface
   if (t < 0) {
     const a = -t;
-    const r = Math.round(26 + a * (148 - 26));
-    const gv = Math.round(26 + a * (48 - 26));
-    const b = Math.round(26 + a * (48 - 26));
-    return `rgb(${r},${gv},${b})`;
+    return `rgb(${Math.round(26 + a * 122)},${Math.round(26 + a * 22)},${Math.round(26 + a * 22)})`;
   } else {
     const a = t;
-    const r = Math.round(26 + a * (42 - 26));
-    const gv = Math.round(26 + a * (78 - 26));
-    const b = Math.round(26 + a * (160 - 26));
-    return `rgb(${r},${gv},${b})`;
+    return `rgb(${Math.round(26 + a * 16)},${Math.round(26 + a * 52)},${Math.round(26 + a * 134)})`;
   }
 }
 
@@ -74,6 +91,7 @@ function CorrelationScatter({ xs, ys, xLabel, yLabel, corr, height = 260 }: Scat
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(440);
+  const themeVersion = useThemeVersion();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -87,6 +105,7 @@ function CorrelationScatter({ xs, ys, xLabel, yLabel, corr, height = 260 }: Scat
 
   useEffect(() => {
     if (!svgRef.current || xs.length === 0) return;
+    void themeVersion; // re-draw when theme changes
 
     const M = { top: 12, right: 16, bottom: 36, left: 52 };
     const iW = width - M.left - M.right;
@@ -106,9 +125,9 @@ function CorrelationScatter({ xs, ys, xLabel, yLabel, corr, height = 260 }: Scat
     const yScale = d3.scaleLinear().domain([yMin - yPad, yMax + yPad]).range([iH, 0]);
 
     const styleAxis = (sel: d3.Selection<SVGGElement, unknown, null, undefined>) => {
-      sel.select('.domain').attr('stroke', '#525252');
-      sel.selectAll('.tick line').attr('stroke', '#525252');
-      sel.selectAll<SVGTextElement, unknown>('.tick text').attr('fill', '#737373').attr('font-size', 10);
+      sel.select('.domain').attr('stroke', 'var(--border)');
+      sel.selectAll('.tick line').attr('stroke', 'var(--border)');
+      sel.selectAll<SVGTextElement, unknown>('.tick text').attr('fill', 'var(--text-tertiary)').attr('font-size', 10);
     };
 
     g.append('g').attr('transform', `translate(0,${iH})`).call(d3.axisBottom(xScale).ticks(5).tickFormat(d3.format('.2%'))).call(styleAxis);
@@ -119,11 +138,11 @@ function CorrelationScatter({ xs, ys, xLabel, yLabel, corr, height = 260 }: Scat
     const zy = yScale(0);
     if (zx >= 0 && zx <= iW) {
       g.append('line').attr('x1', zx).attr('x2', zx).attr('y1', 0).attr('y2', iH)
-        .attr('stroke', 'rgba(255,255,255,0.06)').attr('stroke-width', 1);
+        .attr('stroke', 'var(--border-subtle)').attr('stroke-width', 1);
     }
     if (zy >= 0 && zy <= iH) {
       g.append('line').attr('x1', 0).attr('x2', iW).attr('y1', zy).attr('y2', zy)
-        .attr('stroke', 'rgba(255,255,255,0.06)').attr('stroke-width', 1);
+        .attr('stroke', 'var(--border-subtle)').attr('stroke-width', 1);
     }
 
     // Scatter points
@@ -133,7 +152,7 @@ function CorrelationScatter({ xs, ys, xLabel, yLabel, corr, height = 260 }: Scat
       .attr('cx', (_, i) => xScale(xs[i]))
       .attr('cy', (_, i) => yScale(ys[i]))
       .attr('r', 2.5)
-      .attr('fill', '#5e8eff')
+      .attr('fill', 'var(--accent)')
       .attr('opacity', 0.45);
 
     // OLS line
@@ -150,18 +169,18 @@ function CorrelationScatter({ xs, ys, xLabel, yLabel, corr, height = 260 }: Scat
     // Axis labels
     g.append('text')
       .attr('x', iW / 2).attr('y', iH + 28)
-      .attr('text-anchor', 'middle').attr('fill', '#737373').attr('font-size', 11)
+      .attr('text-anchor', 'middle').attr('fill', 'var(--text-tertiary)').attr('font-size', 11)
       .text(xLabel);
 
     g.append('text')
       .attr('transform', `translate(-36,${iH / 2}) rotate(-90)`)
-      .attr('text-anchor', 'middle').attr('fill', '#737373').attr('font-size', 11)
+      .attr('text-anchor', 'middle').attr('fill', 'var(--text-tertiary)').attr('font-size', 11)
       .text(yLabel);
 
     // Correlation label
     g.append('text')
       .attr('x', iW - 2).attr('y', 10)
-      .attr('text-anchor', 'end').attr('fill', '#a3a3a3').attr('font-size', 11)
+      .attr('text-anchor', 'end').attr('fill', 'var(--text-tertiary)').attr('font-size', 11)
       .text(`ρ = ${corr.toFixed(3)}`);
   }, [xs, ys, xLabel, yLabel, corr, width, height]);
 
@@ -182,6 +201,7 @@ export function CorrelationMatrix({ matrix, tickers, returns, nAssets }: Correla
   const [containerWidth, setContainerWidth] = useState(560);
   const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; i: number; j: number; v: number } | null>(null);
+  const themeVersion = useThemeVersion();
 
   const n = nAssets;
   const cellSize = Math.max(40, Math.floor(Math.min(600, containerWidth) / n));
@@ -243,9 +263,12 @@ export function CorrelationMatrix({ matrix, tickers, returns, nAssets }: Correla
             }
           });
 
-        // Cell value text
+        // Cell value text — white on saturated cells, subdued on near-zero cells
         const fontSize = cellSize < 50 ? 9 : cellSize < 70 ? 10 : 11;
-        const textColor = Math.abs(v) > 0.5 ? 'rgba(255,255,255,0.9)' : '#a3a3a3';
+        const absV = Math.abs(v);
+        const textColor = getTheme() === 'light'
+          ? (absV > 0.4 ? 'rgba(255,255,255,0.92)' : 'var(--text-secondary)')
+          : (absV > 0.5 ? 'rgba(255,255,255,0.9)'  : 'var(--text-tertiary)');
         g.append('text')
           .attr('x', j * cellSize + cellSize / 2)
           .attr('y', i * cellSize + cellSize / 2 + 4)
@@ -266,7 +289,7 @@ export function CorrelationMatrix({ matrix, tickers, returns, nAssets }: Correla
         .attr('text-anchor', 'end')
         .attr('font-size', Math.max(9, Math.min(11, cellSize / 4.5)))
         .attr('font-family', 'var(--font-mono), monospace')
-        .attr('fill', '#a3a3a3')
+        .attr('fill', 'var(--text-tertiary)')
         .text(tickers[i] ?? '');
     }
 
@@ -278,10 +301,10 @@ export function CorrelationMatrix({ matrix, tickers, returns, nAssets }: Correla
         .attr('text-anchor', 'middle')
         .attr('font-size', Math.max(9, Math.min(11, cellSize / 4.5)))
         .attr('font-family', 'var(--font-mono), monospace')
-        .attr('fill', '#a3a3a3')
+        .attr('fill', 'var(--text-tertiary)')
         .text(tickers[j] ?? '');
     }
-  }, [matrix, tickers, n, cellSize, labelPad, selectedCell]);
+  }, [matrix, tickers, n, cellSize, labelPad, selectedCell, themeVersion]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -325,44 +348,45 @@ export function CorrelationMatrix({ matrix, tickers, returns, nAssets }: Correla
             style={{
               left: tooltipRight ? tooltip.x - 160 : tooltip.x + 10,
               top: Math.max(8, tooltip.y - 20),
-              background: '#111111',
-              borderColor: 'rgba(255,255,255,0.08)',
+              background: 'var(--surface-elevated)',
+              borderColor: 'var(--border)',
               padding: '7px 10px',
               minWidth: 140,
             }}
           >
-            <div className="mb-1 text-[#737373]">
+            <div className="mb-1" style={{ color: 'var(--text-tertiary)' }}>
               {tickers[tooltip.i]} × {tickers[tooltip.j]}
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-[#a3a3a3]">correlation</span>
+              <span style={{ color: 'var(--text-secondary)' }}>correlation</span>
               <span
                 className="tabular-nums font-medium"
-                style={{ color: tooltip.v > 0 ? '#4a6fbc' : tooltip.v < 0 ? '#c75454' : '#a3a3a3' }}
+                style={{ color: tooltip.v > 0 ? 'var(--accent)' : tooltip.v < 0 ? 'var(--negative)' : 'var(--text-secondary)' }}
               >
                 {tooltip.v.toFixed(3)}
               </span>
             </div>
             {tooltip.i !== tooltip.j && (
-              <div className="mt-1 text-[10px] text-[#525252]">click to plot scatter</div>
+              <div className="mt-1 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>click to plot scatter</div>
             )}
           </div>
         )}
       </div>
 
       {scatterData && (
-        <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-4" style={{ maxWidth: 520 }}>
+        <div className="mt-4 rounded-lg border border-[var(--border-subtle)] p-4" style={{ maxWidth: 520, background: 'var(--surface)' }}>
           <div className="flex items-center justify-between mb-3">
-            <p className="text-[12px] font-medium text-[#a3a3a3]">
-              <span className="font-mono text-[#f5f5f5]">{scatterData.xLabel}</span>
-              <span className="mx-1.5 text-[#525252]">vs</span>
-              <span className="font-mono text-[#f5f5f5]">{scatterData.yLabel}</span>
+            <p className="text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{scatterData.xLabel}</span>
+              <span className="mx-1.5" style={{ color: 'var(--text-tertiary)' }}>vs</span>
+              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{scatterData.yLabel}</span>
             </p>
             <button
               onClick={() => setSelectedCell(null)}
-              className="text-[11px] text-[#525252] hover:text-[#a3a3a3] transition-colors"
+              className="text-[11px] transition-colors"
+              style={{ color: 'var(--text-tertiary)' }}
             >
-              ✕
+              ×
             </button>
           </div>
           <CorrelationScatter

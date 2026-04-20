@@ -28,11 +28,11 @@ export interface HistogramProps {
 
 const M = { top: 16, right: 24, bottom: 44, left: 44 };
 const COLORS = {
-  grid:    'rgba(255,255,255,0.05)',
-  axis:    '#525252',
-  tick:    '#737373',
-  label:   '#a3a3a3',
-  bar:     '#5e8eff',
+  grid:  'var(--border-subtle)',
+  axis:  'var(--border)',
+  tick:  'var(--text-tertiary)',
+  label: 'var(--text-secondary)',
+  bar:   'var(--accent)',
 };
 
 // ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ export function Histogram({
   return (
     <div ref={containerRef} className="relative w-full" style={{ height }}>
       {values.length === 0 ? (
-        <div className="flex h-full items-center justify-center text-[12px] text-[#737373]">
+        <div className="flex h-full items-center justify-center text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
           No data
         </div>
       ) : (
