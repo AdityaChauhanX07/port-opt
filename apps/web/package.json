@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@google/generative-ai": "^0.24.1",
     "@portopt/charts": "workspace:*",
     "@portopt/three": "workspace:*",
     "@portopt/types": "workspace:*",

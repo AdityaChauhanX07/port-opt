@@ -1,10 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { z } from 'zod';
 import { publicProcedure, router } from '../trpc';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 const ContextSchema = z.object({
   tickers: z.array(z.string()),
@@ -43,8 +41,8 @@ export const aiRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      if (!process.env.ANTHROPIC_API_KEY) {
-        throw new Error('ANTHROPIC_API_KEY_NOT_SET');
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY_NOT_SET');
       }
 
       const { question, context } = input;
@@ -86,17 +84,14 @@ Instructions:
 - Use **bold** for key numbers and conclusions.
 - If the user asks something that cannot be determined from the data provided, say so clearly and explain what additional data would be needed.`;
 
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: question }],
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: question }] }],
+        systemInstruction: { role: 'model', parts: [{ text: systemPrompt }] },
       });
 
-      const text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n');
+      const text = result.response.text();
 
       return { answer: text };
     }),
