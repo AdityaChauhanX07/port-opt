@@ -5,38 +5,53 @@ import Link from 'next/link';
 import { motion, useReducedMotion } from 'framer-motion';
 
 // ---------------------------------------------------------------------------
-// Frontier geometry — 680×380 viewBox, normalised [0,1] risk/return space
+// Frontier geometry — 880×440 viewBox, realistic % coordinate space
+// X = annual vol %, Y = annual return %
 // ---------------------------------------------------------------------------
 
-const VB = { w: 680, h: 380 };
-const M  = { t: 40, r: 40, b: 50, l: 60 };
-const IW = VB.w - M.l - M.r;
-const IH = VB.h - M.t - M.b;
+const VB = { w: 880, h: 440 };
+const M  = { t: 40, r: 48, b: 52, l: 64 };
+const IW = VB.w - M.l - M.r;  // 768
+const IH = VB.h - M.t - M.b;  // 348
 
-function toSVG(risk: number, ret: number): [number, number] {
-  return [M.l + risk * IW, VB.h - M.b - ret * IH];
+const X_SCALE = 40;  // x-axis spans 0–40% vol
+const Y_SCALE = 24;  // y-axis spans 0–24% return
+
+/** Map (vol%, return%) to SVG pixel coords */
+function toSVG(volPct: number, retPct: number): [number, number] {
+  return [
+    M.l + (volPct / X_SCALE) * IW,
+    VB.h - M.b - (retPct / Y_SCALE) * IH,
+  ];
 }
 
-function buildFrontier(n = 80): string {
+/**
+ * Parametric frontier (t ∈ [0,1]):
+ *   vol(t)  = 7 + 33t      → spans 7 % … 40 %
+ *   ret(t)  = 3.5 + 32t − 12t²  → 3.5 % … 23.5 % (concave, realistic shape)
+ *
+ * Tangency (max Sharpe at rf=1 %) solved analytically: t* ≈ 0.422
+ *   vol* ≈ 20.9 %,  ret* ≈ 14.9 %
+ */
+function frontierVol(t: number) { return 7 + 33 * t; }
+function frontierRet(t: number) { return 3.5 + 32 * t - 12 * t * t; }
+
+function buildFrontier(n = 100): string {
   let d = '';
   for (let i = 0; i <= n; i++) {
-    const t    = i / n;
-    const risk = 0.09 + 0.60 * t;
-    const ret  = 0.08 + 0.88 * t - 0.28 * t * t;
-    const [x, y] = toSVG(risk, ret);
+    const t = i / n;
+    const [x, y] = toSVG(frontierVol(t), frontierRet(t));
     d += `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)} `;
   }
   return d.trim();
 }
 
-function estimateLen(n = 80): number {
-  let len = 0, prev: [number,number] | null = null;
+function estimateLen(n = 100): number {
+  let len = 0, prev: [number, number] | null = null;
   for (let i = 0; i <= n; i++) {
-    const t    = i / n;
-    const risk = 0.09 + 0.60 * t;
-    const ret  = 0.08 + 0.88 * t - 0.28 * t * t;
-    const cur  = toSVG(risk, ret);
-    if (prev) len += Math.hypot(cur[0]-prev[0], cur[1]-prev[1]);
+    const t = i / n;
+    const cur = toSVG(frontierVol(t), frontierRet(t));
+    if (prev) len += Math.hypot(cur[0] - prev[0], cur[1] - prev[1]);
     prev = cur;
   }
   return len;
@@ -45,26 +60,35 @@ function estimateLen(n = 80): number {
 const FRONTIER_D   = buildFrontier();
 const FRONTIER_LEN = estimateLen();
 
-const TX_N = 0.38, TY_N = 0.685;
-const [TX, TY] = toSVG(TX_N, TY_N);
+// Tangency portfolio — exactly on the curve at t* ≈ 0.422 (analytical max Sharpe, rf=1%)
+const T_TAN  = 0.422;
+const TX_PCT = frontierVol(T_TAN);  // ≈ 20.9
+const TY_PCT = frontierRet(T_TAN);  // ≈ 14.9
+const [TX, TY] = toSVG(TX_PCT, TY_PCT);
 
-const RF_RET = 0.045;
-const [, RFY] = toSVG(0, RF_RET);
-const slope   = (TY_N - RF_RET) / TX_N;
-const CML_X2  = M.l + IW;
-const CML_Y2  = VB.h - M.b - (RF_RET + slope * 1.0) * IH;
-const CML_D   = `M${M.l},${RFY.toFixed(1)} L${CML_X2},${CML_Y2.toFixed(1)}`;
-const X_AXIS  = `M${M.l},${VB.h-M.b} L${VB.w-M.r},${VB.h-M.b}`;
-const Y_AXIS  = `M${M.l},${M.t} L${M.l},${VB.h-M.b}`;
+// Capital Market Line: from (vol=0, rf=1%) through tangency, extended to top edge
+const RF_PCT  = 1.0;
+const [, RFY] = toSVG(0, RF_PCT);
+const CML_SLOPE = (TY - RFY) / (TX - M.l);           // SVG-space slope
+const CML_END_X = M.l + (M.t - RFY) / CML_SLOPE;     // x where line hits top margin
+const CML_D  = `M${M.l},${RFY.toFixed(1)} L${CML_END_X.toFixed(1)},${M.t}`;
 
+const X_AXIS = `M${M.l},${VB.h - M.b} L${VB.w - M.r},${VB.h - M.b}`;
+const Y_AXIS = `M${M.l},${M.t} L${M.l},${VB.h - M.b}`;
+
+/**
+ * Assets [label, vol%, return%, color]
+ * Spread across the risk-return plane at realistic positions,
+ * all lying BELOW the efficient frontier.
+ */
 const ASSETS: [string, number, number, string][] = [
-  ['SPY',  0.18, 0.38, '#3B82F6'],
-  ['QQQ',  0.24, 0.46, '#8B5CF6'],
-  ['AAPL', 0.32, 0.58, '#EC4899'],
-  ['MSFT', 0.28, 0.52, '#6366F1'],
-  ['GLD',  0.12, 0.20, '#F59E0B'],
-  ['TLT',  0.09, 0.12, '#10B981'],
-  ['IWM',  0.22, 0.42, '#06B6D4'],
+  ['TLT',  8,  2,  '#10B981'],  // bonds — bottom-left
+  ['GLD',  14, 6,  '#F59E0B'],  // gold  — lower-center
+  ['SPY',  16, 10, '#3B82F6'],  // broad market — center
+  ['IWM',  22, 11, '#06B6D4'],  // small-caps — right of SPY
+  ['QQQ',  20, 13, '#8B5CF6'],  // tech index — above SPY
+  ['MSFT', 26, 16, '#6366F1'],  // large-cap tech — upper-right
+  ['AAPL', 30, 18, '#EC4899'],  // high-vol stock — far upper-right
 ];
 
 // Easing tuple type framer-motion expects
@@ -150,7 +174,7 @@ export default function HeroPage() {
         <motion.div
           initial={instant ? false : { opacity: 0 }} animate={{ opacity: 1 }}
           transition={{ duration: T.grid.dur, delay: instant ? 0 : T.grid.delay }}
-          style={{ width: '100%', maxWidth: 680 }}
+          style={{ width: '100%', maxWidth: 880 }}
         >
           <svg viewBox={`0 0 ${VB.w} ${VB.h}`}
             style={{ width: '100%', display: 'block', overflow: 'visible' }}
@@ -163,24 +187,26 @@ export default function HeroPage() {
                 <stop offset={s3} stopColor="#EC4899" />
               </linearGradient>
               <radialGradient id="tglow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%"   stopColor="#3B82F6" stopOpacity="0.16" />
+                <stop offset="0%"   stopColor="#3B82F6" stopOpacity="0.14" />
                 <stop offset="100%" stopColor="#3B82F6" stopOpacity="0"    />
               </radialGradient>
-              <radialGradient id="gfade" cx="50%" cy="50%" r="55%">
-                <stop offset="20%"  stopColor="white" stopOpacity="1" />
+              {/* Aggressive edge-fade mask — grid becomes atmosphere, not structure */}
+              <radialGradient id="gfade" cx="50%" cy="50%" r="60%">
+                <stop offset="10%"  stopColor="white" stopOpacity="1" />
+                <stop offset="70%"  stopColor="white" stopOpacity="0.5" />
                 <stop offset="100%" stopColor="white" stopOpacity="0" />
               </radialGradient>
               <mask id="gm"><rect x="0" y="0" width={VB.w} height={VB.h} fill="url(#gfade)" /></mask>
             </defs>
 
-            {/* Grid — parallaxes with mouse */}
+            {/* Grid — barely-visible, parallaxes with mouse */}
             <g ref={gridRef} mask="url(#gm)">
-              {Array.from({length:10},(_,i)=><line key={`v${i}`} x1={i*(VB.w/9)} y1={0} x2={i*(VB.w/9)} y2={VB.h} stroke="#1F1F23" strokeWidth={1}/>)}
-              {Array.from({length:8}, (_,i)=><line key={`h${i}`} x1={0} y1={i*(VB.h/7)} x2={VB.w} y2={i*(VB.h/7)} stroke="#1F1F23" strokeWidth={1}/>)}
+              {Array.from({length:12},(_,i)=><line key={`v${i}`} x1={i*(VB.w/11)} y1={0} x2={i*(VB.w/11)} y2={VB.h} stroke="#1A1A1E" strokeWidth={1} strokeOpacity={0.08}/>)}
+              {Array.from({length:9}, (_,i)=><line key={`h${i}`} x1={0} y1={i*(VB.h/8)} x2={VB.w} y2={i*(VB.h/8)} stroke="#1A1A1E" strokeWidth={1} strokeOpacity={0.08}/>)}
             </g>
 
-            {/* Tangency accent glow */}
-            <ellipse cx={TX} cy={TY} rx="130" ry="100" fill="url(#tglow)" />
+            {/* Soft accent glow behind tangency point */}
+            <ellipse cx={TX} cy={TY} rx="160" ry="120" fill="url(#tglow)" />
 
             {/* Axes */}
             <motion.path d={X_AXIS} stroke="#2A2A2F" strokeWidth={1} fill="none"
@@ -223,12 +249,16 @@ export default function HeroPage() {
                   style={{transformOrigin:`${ax}px ${ay}px`} as React.CSSProperties}
                 >
                   <rect x={ax-5.5} y={ay-5.5} width={11} height={11} rx={1}
-                    fill={color} fillOpacity={0.82}
-                    stroke="rgba(255,255,255,0.2)" strokeWidth={1}
+                    fill={color} fillOpacity={0.85}
+                    stroke="rgba(255,255,255,0.22)" strokeWidth={1}
                     transform={`rotate(45,${ax},${ay})`}/>
-                  <text x={ax<VB.w*0.78?ax+10:ax-10} y={ay+4}
-                    textAnchor={ax<VB.w*0.78?'start':'end'}
+                  {/* Label: right side unless marker is within 60px of right edge */}
+                  <text
+                    x={ax < VB.w - M.r - 60 ? ax + 12 : ax - 12}
+                    y={ay + 4}
+                    textAnchor={ax < VB.w - M.r - 60 ? 'start' : 'end'}
                     fill="#A1A1A8" fontSize={10} fontFamily="var(--font-mono,monospace)"
+                    letterSpacing="0.03em"
                   >{label}</text>
                 </motion.g>
               );
