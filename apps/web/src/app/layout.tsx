@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import { Inter, JetBrains_Mono, Spectral } from 'next/font/google';
 import { TRPCProvider } from '@/lib/trpc/provider';
 import { Providers } from './providers';
 import '../styles/globals.css';
@@ -18,6 +18,13 @@ const jetbrainsMono = JetBrains_Mono({
   display: 'swap',
 });
 
+const spectral = Spectral({
+  subsets: ['latin'],
+  weight: ['400'],
+  variable: '--font-serif',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
   title: 'PortOpt — Quantitative Portfolio Intelligence',
   description:
@@ -29,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       data-theme="dark"
-      className={`${inter.variable} ${jetbrainsMono.variable}`}
+      className={`${inter.variable} ${jetbrainsMono.variable} ${spectral.variable}`}
     >
       <head>
         {/* Apply persisted theme before first paint to prevent flash */}
