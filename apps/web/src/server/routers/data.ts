@@ -95,6 +95,20 @@ export const dataRouter = router({
     return z.array(SnapshotItem).parse(await res.json());
   }),
 
+  portfolioSnapshot: publicProcedure
+    .input(z.object({ tickers: z.array(z.string()).min(1).max(10) }))
+    .query(async ({ input }) => {
+      const url = new URL(`${DATA_SERVICE_URL}/market-snapshot`);
+      input.tickers.forEach((t) => url.searchParams.append('tickers', t));
+      const res = await fetch(url.toString(), { next: { revalidate: 300 } });
+
+      if (!res.ok) {
+        throw new Error(`Portfolio snapshot failed: ${res.statusText}`);
+      }
+
+      return z.array(SnapshotItem).parse(await res.json());
+    }),
+
   pingDataService: publicProcedure
     .input(z.object({ url: z.string() }))
     .mutation(async ({ input }) => {

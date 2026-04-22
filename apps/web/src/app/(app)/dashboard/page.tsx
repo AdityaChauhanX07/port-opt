@@ -1,9 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { TrendingUp, LineChart, ShieldAlert, ArrowRight, type LucideIcon } from 'lucide-react';
-import { MetricCard } from '@portopt/ui';
+import { TrendingUp, Shield, Sparkles, type LucideIcon } from 'lucide-react';
 import { api } from '@/lib/trpc/client';
 import { usePortfolioStore } from '@/lib/stores/portfolio';
 
@@ -27,9 +26,270 @@ const ALGO_LABELS: Record<string, string> = {
   black_litterman: 'Black-Litterman',
 };
 
+const ALGO_SUBLABELS: Record<string, string> = {
+  markowitz:       'Mean-Variance',
+  hrp:             'Hierarchical RP',
+  risk_parity:     'Risk Parity',
+  cvar:            'Conditional VaR',
+  robust:          'Robust MVO',
+  black_litterman: 'Black-Litterman',
+};
+
 // ---------------------------------------------------------------------------
-// Sparkline — 1px stroke, fills cell width
+// Section 2 — Hero metric
 // ---------------------------------------------------------------------------
+
+interface HeroMetricProps {
+  label: string;
+  value: string;
+  sub: string;
+  mono?: boolean;
+  serif?: boolean;
+  large?: boolean;
+  valueColor?: string;
+}
+
+function HeroMetric({ label, value, sub, mono = false, serif = false, large = false, valueColor }: HeroMetricProps) {
+  return (
+    <div style={{ flex: 1, padding: '24px 32px', minWidth: 0 }}>
+      <p
+        style={{
+          fontSize: 11,
+          fontFamily: 'var(--font-mono)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: 'var(--text-tertiary)',
+          marginBottom: 8,
+        }}
+      >
+        {label}
+      </p>
+      <p
+        style={{
+          fontSize: large ? 28 : 20,
+          fontFamily: mono ? 'var(--font-mono)' : serif ? 'var(--font-serif)' : 'var(--font-sans)',
+          fontWeight: serif ? 400 : 500,
+          color: valueColor ?? 'var(--text-primary)',
+          fontVariantNumeric: mono ? 'tabular-nums' : undefined,
+          lineHeight: 1.2,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {value}
+      </p>
+      <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>
+        {sub}
+      </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section 3 — Activity feed
+// ---------------------------------------------------------------------------
+
+type ActivityType = 'optimize' | 'backtest' | 'risk' | 'saved';
+
+interface ActivityEntry {
+  type: ActivityType;
+  desc: string;
+  stats: string;
+  time: string;
+}
+
+const DOT_COLORS: Record<ActivityType, string> = {
+  optimize: '#3B82F6',
+  backtest: '#8B5CF6',
+  risk:     '#F59E0B',
+  saved:    '#10B981',
+};
+
+const MOCK_ACTIVITY: ActivityEntry[] = [
+  { type: 'optimize', desc: 'Optimized portfolio via Markowitz MVO', stats: 'Sharpe 0.99 · Vol 13.6% · Return 17.1%', time: '3h ago'    },
+  { type: 'backtest', desc: 'Ran walk-forward backtest',              stats: 'CAGR -99.98% · Max DD -100%',             time: '5h ago'    },
+  { type: 'risk',     desc: 'Detected 2-state HMM regimes',           stats: 'Bull 67% · Bear 33%',                     time: 'Yesterday' },
+  { type: 'optimize', desc: 'Compared HRP vs Markowitz',              stats: 'HRP Sharpe 0.82 · MVO Sharpe 0.99',      time: '2d ago'    },
+  { type: 'saved',    desc: 'Added TLT, GLD to universe',             stats: '6 assets now',                            time: '2d ago'    },
+];
+
+function ActivityRow({ entry, first }: { entry: ActivityEntry; first: boolean }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12,
+        padding: '16px',
+        borderTop: first ? 'none' : '1px solid var(--border-subtle)',
+        background: hovered ? '#0F0F12' : 'transparent',
+        marginLeft: -16,
+        marginRight: -16,
+        transition: `background var(--duration-micro) var(--ease)`,
+      }}
+    >
+      <div
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          background: DOT_COLORS[entry.type],
+          flexShrink: 0,
+          marginTop: 5,
+        }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: '20px', marginBottom: 3 }}>
+          {entry.desc}
+        </p>
+        <p
+          style={{
+            fontSize: 12,
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-tertiary)',
+            fontVariantNumeric: 'tabular-nums',
+            lineHeight: '16px',
+          }}
+        >
+          {entry.stats}
+        </p>
+      </div>
+      <p
+        style={{
+          fontSize: 12,
+          fontFamily: 'var(--font-mono)',
+          color: hovered ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+          fontVariantNumeric: 'tabular-nums',
+          flexShrink: 0,
+          marginTop: 2,
+          transition: `color var(--duration-micro) var(--ease)`,
+        }}
+      >
+        {entry.time}
+      </p>
+    </div>
+  );
+}
+
+function ActivityFeed({ hasPortfolio }: { hasPortfolio: boolean }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <p
+        style={{
+          fontSize: 13,
+          fontFamily: 'var(--font-mono)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: 'var(--text-tertiary)',
+          marginBottom: 16,
+        }}
+      >
+        Recent activity
+      </p>
+
+      {hasPortfolio ? (
+        <>
+          {MOCK_ACTIVITY.map((entry, i) => (
+            <ActivityRow key={i} entry={entry} first={i === 0} />
+          ))}
+          <div style={{ marginTop: 16 }}>
+            <button
+              type="button"
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                fontSize: 13,
+                color: 'var(--text-tertiary)',
+                cursor: 'pointer',
+              }}
+              className="hover:text-[var(--text-secondary)] transition-colors duration-[var(--duration-micro)]"
+            >
+              View all activity →
+            </button>
+          </div>
+        </>
+      ) : (
+        <p style={{ fontSize: 13, color: 'var(--text-tertiary)', paddingTop: 16 }}>
+          No activity yet. Load a portfolio to get started.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section 3 — New workspace card
+// ---------------------------------------------------------------------------
+
+const PRESETS = ['60/40 classic', 'All Weather', 'Tech mega-caps'] as const;
+
+function NewWorkspaceCard() {
+  return (
+    <div
+      style={{
+        background: '#0F0F12',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--radius-md)',
+        padding: 24,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <p style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-primary)', lineHeight: '24px' }}>
+        New workspace
+      </p>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 12, lineHeight: '20px' }}>
+        Start with a preset or build from scratch.
+      </p>
+      <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {PRESETS.map((preset) => (
+          <Link key={preset} href="/optimize" style={{ textDecoration: 'none' }}>
+            <button
+              type="button"
+              style={{
+                width: '100%',
+                height: 36,
+                paddingLeft: 12,
+                fontSize: 13,
+                textAlign: 'left',
+                background: 'var(--surface-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+              }}
+              className="hover:bg-[#1F1F23] hover:text-[var(--text-primary)] transition-colors duration-[var(--duration-micro)]"
+            >
+              {preset}
+            </button>
+          </Link>
+        ))}
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <Link
+          href="/optimize"
+          style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none' }}
+          className="hover:underline"
+        >
+          Start blank →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section 4 — Portfolio snapshot
+// ---------------------------------------------------------------------------
+
+type Period = '1D' | '1W' | '1M' | '3M' | '1Y';
+const PERIODS: Period[] = ['1D', '1W', '1M', '3M', '1Y'];
 
 function Sparkline({ values, positive }: { values: number[]; positive: boolean }) {
   if (values.length < 2) return <div style={{ height: 40 }} />;
@@ -57,7 +317,7 @@ function Sparkline({ values, positive }: { values: number[]; positive: boolean }
         points={pts}
         fill="none"
         stroke={positive ? 'var(--positive)' : 'var(--negative)'}
-        strokeWidth={1}
+        strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -65,169 +325,284 @@ function Sparkline({ values, positive }: { values: number[]; positive: boolean }
   );
 }
 
-// ---------------------------------------------------------------------------
-// Market snapshot grid
-// ---------------------------------------------------------------------------
-
-interface SnapshotItem {
+interface AssetCardData {
   ticker: string;
-  price: number;
-  change_pct: number;
-  sparkline: number[];
+  price?: number;
+  changePct?: number;
+  sparkline?: number[];
+  isBenchmark?: boolean;
 }
 
-function SnapshotCell({ item, last }: { item: SnapshotItem; last: boolean }) {
-  const pos = item.change_pct >= 0;
+function AssetCard({ ticker, price, changePct, sparkline = [], isBenchmark = false, isLoading = false }: AssetCardData & { isLoading?: boolean }) {
+  const pos = (changePct ?? 0) >= 0;
+
+  if (isLoading) {
+    return (
+      <div style={{ padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div className="skeleton h-3 w-10 rounded" />
+          <div className="skeleton h-3 w-12 rounded" />
+        </div>
+        <div className="skeleton rounded" style={{ height: 40, marginBottom: 6 }} />
+        <div className="skeleton h-3 w-14 rounded" />
+      </div>
+    );
+  }
+
   return (
-    <div
-      style={{
-        flex: 1,
-        padding: '12px 16px',
-        borderRight: last ? 'none' : '1px solid var(--border-subtle)',
-        minWidth: 0,
-      }}
-    >
-      {/* Top row: ticker + change */}
-      <div className="flex items-center justify-between mb-1">
+    <div style={{ padding: 16 }}>
+      {/* Top row: ticker + change % */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+        <div>
+          <span
+            style={{
+              fontSize: 13,
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+              fontVariantNumeric: 'tabular-nums',
+              display: 'block',
+            }}
+          >
+            {ticker}
+          </span>
+          {isBenchmark && (
+            <span
+              style={{
+                fontSize: 10,
+                fontFamily: 'var(--font-mono)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.12em',
+                color: 'var(--text-tertiary)',
+                display: 'block',
+                marginTop: 2,
+              }}
+            >
+              Benchmark
+            </span>
+          )}
+        </div>
         <span
-          className="text-[13px] text-primary"
-          style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}
-        >
-          {item.ticker}
-        </span>
-        <span
-          className="text-[12px]"
           style={{
+            fontSize: 12,
             fontFamily: 'var(--font-mono)',
             fontVariantNumeric: 'tabular-nums',
-            color: pos ? 'var(--positive)' : 'var(--negative)',
+            color: changePct === undefined
+              ? 'var(--text-tertiary)'
+              : pos
+                ? 'var(--positive)'
+                : 'var(--negative)',
           }}
         >
-          {pos ? '+' : ''}{item.change_pct.toFixed(2)}%
+          {changePct !== undefined
+            ? `${pos ? '+' : ''}${changePct.toFixed(2)}%`
+            : '—'}
         </span>
       </div>
 
       {/* Sparkline */}
-      <Sparkline values={item.sparkline} positive={pos} />
-
-      {/* Price */}
-      <div className="mt-1">
-        <span
-          className="text-[13px] text-primary"
-          style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}
+      {sparkline.length > 1 ? (
+        <Sparkline values={sparkline} positive={pos} />
+      ) : (
+        <div
+          style={{
+            height: 40,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
         >
-          {item.price.toFixed(2)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function SnapshotCellSkeleton({ last }: { last: boolean }) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        padding: '12px 16px',
-        borderRight: last ? 'none' : '1px solid var(--border-subtle)',
-      }}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <div className="skeleton h-3 w-10 rounded" />
-        <div className="skeleton h-3 w-12 rounded" />
-      </div>
-      <div className="skeleton rounded" style={{ height: 40, width: '100%', marginBottom: 6 }} />
-      <div className="skeleton h-3 w-14 rounded" />
-    </div>
-  );
-}
-
-function MarketSnapshot() {
-  const { data, isLoading, error } = api.data.marketSnapshot.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000,
-    retry: 1,
-  });
-
-  if (error) {
-    return (
-      <p className="text-[13px]" style={{ color: 'var(--text-tertiary)' }}>
-        Market data unavailable
-      </p>
-    );
-  }
-
-  const items = data ?? [];
-  // Show first 8 items, 4-up per row
-  const visible = items.slice(0, 8);
-
-  return (
-    <div>
-      {/* Row 1 */}
-      <div
-        style={{
-          display: 'flex',
-          borderBottom: visible.length > 4 ? '1px solid var(--border-subtle)' : 'none',
-        }}
-      >
-        {isLoading
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <SnapshotCellSkeleton key={i} last={i === 3} />
-            ))
-          : visible.slice(0, 4).map((item, i) => (
-              <SnapshotCell key={item.ticker} item={item} last={i === 3} />
-            ))}
-      </div>
-      {/* Row 2 */}
-      {(isLoading || visible.length > 4) && (
-        <div style={{ display: 'flex' }}>
-          {isLoading
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <SnapshotCellSkeleton key={i} last={i === 3} />
-              ))
-            : visible.slice(4, 8).map((item, i, arr) => (
-                <SnapshotCell key={item.ticker} item={item} last={i === arr.length - 1} />
-              ))}
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+            —
+          </span>
         </div>
       )}
+
+      {/* Price */}
+      <p
+        style={{
+          fontSize: 14,
+          fontFamily: 'var(--font-mono)',
+          fontVariantNumeric: 'tabular-nums',
+          color: price !== undefined ? 'var(--text-primary)' : 'var(--text-tertiary)',
+          marginTop: 4,
+        }}
+      >
+        {price !== undefined ? price.toFixed(2) : '—'}
+      </p>
     </div>
   );
 }
 
+function PortfolioSnapshot({ portfolioTickers }: { portfolioTickers: string[] }) {
+  const [period, setPeriod] = useState<Period>('1D');
+
+  // Fetch portfolio tickers + SPY in one call
+  const snapshotTickers = [...portfolioTickers, 'SPY'];
+
+  const { data, isLoading, error } = api.data.portfolioSnapshot.useQuery(
+    { tickers: snapshotTickers },
+    { staleTime: 5 * 60 * 1000, retry: 1 }
+  );
+
+  const items = data ?? [];
+
+  // Build portfolio item list (preserves order)
+  const portfolioItems = portfolioTickers.map(
+    (t) => items.find((i) => i.ticker === t) ?? null
+  );
+  const spyItem = items.find((i) => i.ticker === 'SPY') ?? null;
+
+  // Equal-weight benchmark: average of available portfolio items
+  const validItems = portfolioItems.filter((x): x is (typeof items)[number] => x !== null);
+  const ewChangePct =
+    validItems.length > 0
+      ? validItems.reduce((sum, i) => sum + i.change_pct, 0) / validItems.length
+      : null;
+  const ewSparkline: number[] = (() => {
+    if (validItems.length === 0) return [];
+    const len = Math.min(...validItems.map((i) => i.sparkline.length));
+    return Array.from({ length: len }, (_, idx) =>
+      validItems.reduce((sum, i) => sum + i.sparkline[idx], 0) / validItems.length
+    );
+  })();
+
+  // Final 8 display cells: portfolio (N) + SPY + EW
+  const displayCells: Array<{ data: AssetCardData; loading: boolean }> = [
+    ...portfolioItems.map((item, i) => ({
+      data: item
+        ? { ticker: item.ticker, price: item.price, changePct: item.change_pct, sparkline: item.sparkline }
+        : { ticker: portfolioTickers[i] },
+      loading: isLoading,
+    })),
+    {
+      data: spyItem
+        ? { ticker: 'SPY', price: spyItem.price, changePct: spyItem.change_pct, sparkline: spyItem.sparkline, isBenchmark: true }
+        : { ticker: 'SPY', isBenchmark: true },
+      loading: isLoading,
+    },
+    {
+      data: {
+        ticker: 'EW',
+        changePct: ewChangePct ?? undefined,
+        sparkline: ewSparkline,
+        isBenchmark: true,
+      },
+      loading: isLoading && validItems.length === 0,
+    },
+  ];
+
+  return (
+    <section>
+      {/* Section header + period toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <p
+          style={{
+            fontSize: 13,
+            fontFamily: 'var(--font-mono)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            color: 'var(--text-tertiary)',
+          }}
+        >
+          Your assets · today
+        </p>
+        <div style={{ display: 'flex', gap: 12 }}>
+          {PERIODS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPeriod(p)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                fontSize: 12,
+                fontFamily: 'var(--font-mono)',
+                cursor: 'pointer',
+                color: period === p ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 4×2 grid — borders do the grouping work, no card backgrounds */}
+      {error ? (
+        <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Market data unavailable</p>
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            borderTop: '1px solid var(--border-subtle)',
+            borderLeft: '1px solid var(--border-subtle)',
+          }}
+        >
+          {displayCells.map(({ data: cell, loading }, i) => (
+            <div
+              key={cell.ticker || i}
+              style={{
+                borderRight: '1px solid var(--border-subtle)',
+                borderBottom: '1px solid var(--border-subtle)',
+              }}
+            >
+              <AssetCard {...cell} isLoading={loading} />
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Quick-action card
+// Section 5 — Next steps
 // ---------------------------------------------------------------------------
 
-interface ActionCardProps {
+interface NextStepProps {
   href: string;
   Icon: LucideIcon;
   title: string;
   description: string;
 }
 
-function ActionCard({ href, Icon, title, description }: ActionCardProps) {
+function NextStepTile({ href, Icon, title, description }: NextStepProps) {
+  const [hovered, setHovered] = useState(false);
+
   return (
     <Link
       href={href}
-      className={[
-        'group flex flex-col relative no-underline',
-        'rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--surface)]',
-        'hover:border-[var(--border)]',
-        'transition-[border-color] duration-[var(--duration-micro)] ease-[var(--ease)]',
-      ].join(' ')}
-      style={{ height: 140, padding: 20 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        padding: 24,
+        background: '#0F0F12',
+        border: `1px solid ${hovered ? '#2A2A2F' : 'var(--border-subtle)'}`,
+        borderRadius: 'var(--radius-md)',
+        textDecoration: 'none',
+        position: 'relative',
+        transition: `border-color var(--duration-micro) var(--ease)`,
+        minHeight: 120,
+      }}
     >
       <Icon
         size={16}
         strokeWidth={1.5}
-        style={{ color: 'var(--text-tertiary)', marginBottom: 12, flexShrink: 0 }}
+        style={{ color: hovered ? 'var(--text-primary)' : 'var(--text-secondary)', flexShrink: 0, transition: `color var(--duration-micro) var(--ease)` }}
       />
       <p
         style={{
-          fontSize: 16,
-          fontWeight: 600,
+          fontSize: 15,
+          fontWeight: 500,
           color: 'var(--text-primary)',
-          lineHeight: '24px',
-          marginBottom: 4,
+          marginTop: 12,
+          lineHeight: '22px',
         }}
       >
         {title}
@@ -236,6 +611,7 @@ function ActionCard({ href, Icon, title, description }: ActionCardProps) {
         style={{
           fontSize: 13,
           color: 'var(--text-secondary)',
+          marginTop: 4,
           lineHeight: '20px',
           display: '-webkit-box',
           WebkitLineClamp: 2,
@@ -245,32 +621,92 @@ function ActionCard({ href, Icon, title, description }: ActionCardProps) {
       >
         {description}
       </p>
-
-      {/* Hover arrow — bottom-right */}
-      <ArrowRight
-        size={12}
-        strokeWidth={1.5}
+      <span
         style={{
           position: 'absolute',
-          bottom: 14,
-          right: 14,
-          color: 'var(--text-tertiary)',
+          bottom: 16,
+          right: 16,
+          fontSize: 14,
+          color: hovered ? 'var(--text-primary)' : 'var(--text-tertiary)',
+          transition: `color var(--duration-micro) var(--ease)`,
         }}
-        className="opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--duration-micro)]"
-      />
+      >
+        →
+      </span>
     </Link>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Section header (text-h3)
+// Empty state — replaces Section 2 + Section 4 when no portfolio loaded
 // ---------------------------------------------------------------------------
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+const EMPTY_PRESETS = ['60/40 classic', 'All Weather', 'Tech mega-caps', 'Custom tickers'] as const;
+
+function EmptyPortfolioState() {
   return (
-    <p className="text-h3" style={{ color: 'var(--text-tertiary)', marginBottom: 16 }}>
-      {children}
-    </p>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        padding: '64px 0',
+        maxWidth: 560,
+        margin: '0 auto',
+      }}
+    >
+      <p
+        style={{
+          fontSize: 11,
+          fontFamily: 'var(--font-mono)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: 'var(--text-tertiary)',
+          marginBottom: 16,
+        }}
+      >
+        No portfolio loaded
+      </p>
+      <h1
+        style={{
+          fontSize: 24,
+          fontFamily: 'var(--font-serif)',
+          fontWeight: 400,
+          color: 'var(--text-primary)',
+          lineHeight: '32px',
+          marginBottom: 12,
+        }}
+      >
+        Start with a universe of assets.
+      </h1>
+      <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: '24px', marginBottom: 32 }}>
+        Pick a preset to see the full flow — frontier, backtest, risk, research — or enter your own tickers.
+      </p>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+        {EMPTY_PRESETS.map((preset) => (
+          <Link key={preset} href="/optimize" style={{ textDecoration: 'none' }}>
+            <button
+              type="button"
+              style={{
+                height: 44,
+                padding: '0 16px',
+                fontSize: 14,
+                background: 'var(--surface-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+              className="hover:bg-[#1F1F23] hover:text-[var(--text-primary)] transition-colors duration-[var(--duration-micro)]"
+            >
+              {preset}
+            </button>
+          </Link>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -286,64 +722,174 @@ export default function DashboardPage() {
   const frontierSharpe =
     frontier?.bestIdx != null ? frontier.sharpes[frontier.bestIdx] : null;
 
-  const algoLabel = ALGO_LABELS[activeAlgorithm] ?? activeAlgorithm;
+  const algoLabel    = ALGO_LABELS[activeAlgorithm]    ?? activeAlgorithm;
+  const algoSublabel = ALGO_SUBLABELS[activeAlgorithm] ?? '';
+
+  const startYear = dateRange.start.slice(0, 4);
+  const endYear   = dateRange.end.slice(0, 4);
+  const years     = parseInt(endYear) - parseInt(startYear);
+  const durationLabel = `${years} year${years !== 1 ? 's' : ''} daily`;
+
+  const sharpeColor =
+    frontierSharpe == null
+      ? 'var(--text-secondary)'
+      : frontierSharpe > 0.8
+        ? 'var(--positive)'
+        : frontierSharpe >= 0.5
+          ? 'var(--text-secondary)'
+          : 'var(--negative)';
 
   return (
-    <div
-      className="slide-enter-content"
-      style={{ display: 'flex', flexDirection: 'column', gap: 40, paddingBottom: 48 }}
-    >
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 40, paddingBottom: 64 }}>
 
-      {/* ── Header ── stagger 1 */}
-      <div>
-        <p className="text-body" style={{ color: 'var(--text-secondary)', marginBottom: 6 }}>
-          {getGreeting()}
-        </p>
-        {hasPortfolio ? (
-          <h1 className="text-h1" style={{ color: 'var(--text-primary)' }}>
-            {tickers.length}-asset portfolio · {algoLabel}
-          </h1>
-        ) : (
-          <h1 className="text-h1" style={{ color: 'var(--text-tertiary)' }}>
-            No portfolio loaded
-          </h1>
-        )}
-      </div>
+      {hasPortfolio ? (
+        <>
+          {/* ── Section 2 — Portfolio identity ── */}
+          <section>
+            <p style={{ fontSize: 14, color: 'var(--text-tertiary)', marginBottom: 4 }}>
+              {getGreeting()}
+            </p>
+            <div style={{ display: 'flex', alignItems: 'baseline' }}>
+              <span
+                style={{
+                  fontSize: 32,
+                  fontFamily: 'var(--font-serif)',
+                  fontWeight: 400,
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.2,
+                }}
+              >
+                {tickers.length}-asset portfolio
+              </span>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--border-strong)',
+                  margin: '0 12px',
+                  userSelect: 'none',
+                }}
+              >
+                ·
+              </span>
+              <span
+                style={{
+                  fontSize: 32,
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 400,
+                  color: 'var(--text-secondary)',
+                  fontVariantNumeric: 'tabular-nums',
+                  lineHeight: 1.2,
+                }}
+              >
+                {algoLabel}
+              </span>
+            </div>
 
-      {/* ── Metric strip (portfolio loaded only) ── stagger 2 */}
-      {hasPortfolio && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 32 }}>
-          <MetricCard label="Assets" value={String(tickers.length)} />
-          <MetricCard label="Algorithm" value={algoLabel} />
-          <MetricCard
-            label="Date range"
-            value={`${dateRange.start.slice(0, 7)}`}
-            sub={`→ ${dateRange.end.slice(0, 7)}`}
-          />
-          <MetricCard
-            label="Frontier Sharpe"
-            value={frontierSharpe != null ? frontierSharpe.toFixed(2) : '—'}
-            color={frontierSharpe == null ? undefined : frontierSharpe >= 0 ? 'positive' : 'negative'}
-          />
-        </div>
+            <div
+              style={{
+                display: 'flex',
+                marginTop: 32,
+                borderTop: '1px solid var(--border-subtle)',
+                borderBottom: '1px solid var(--border-subtle)',
+              }}
+            >
+              <HeroMetric label="ASSETS" value={String(tickers.length)} sub={`${tickers.length} tickers`} mono large />
+              <div style={{ width: 1, flexShrink: 0, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+              <HeroMetric label="ALGORITHM" value={algoLabel} sub={algoSublabel} serif />
+              <div style={{ width: 1, flexShrink: 0, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+              <HeroMetric label="DATE RANGE" value={`${startYear} → ${endYear}`} sub={durationLabel} mono />
+              <div style={{ width: 1, flexShrink: 0, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+              <HeroMetric
+                label="FRONTIER SHARPE"
+                value={frontierSharpe != null ? frontierSharpe.toFixed(2) : '—'}
+                sub="max tangency"
+                mono
+                large
+                valueColor={sharpeColor}
+              />
+            </div>
+
+            <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
+              <Link
+                href="/optimize"
+                style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none' }}
+                className="hover:underline"
+              >
+                Continue in Optimize →
+              </Link>
+            </div>
+          </section>
+
+          {/* ── Section 3 — Recent activity + New workspace ── */}
+          <section style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24, alignItems: 'start' }}>
+            <ActivityFeed hasPortfolio />
+            <NewWorkspaceCard />
+          </section>
+
+          {/* ── Section 4 — Portfolio snapshot ── */}
+          <PortfolioSnapshot portfolioTickers={tickers} />
+
+          {/* ── Section 5 — Next steps ── */}
+          <section>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+              <NextStepTile
+                href="/optimize"
+                Icon={TrendingUp}
+                title="Refine this portfolio"
+                description="Switch algorithms, adjust constraints, or add assets in Optimize."
+              />
+              <NextStepTile
+                href="/risk"
+                Icon={Shield}
+                title="Stress-test it"
+                description="Run Monte Carlo, VaR, CVaR, and regime detection in Risk."
+              />
+              <NextStepTile
+                href="/research"
+                Icon={Sparkles}
+                title="Ask Claude"
+                description="Get a natural-language explanation of what's driving your portfolio's risk."
+              />
+            </div>
+          </section>
+        </>
+      ) : (
+        <>
+          {/* ── Empty state (covers Section 2 + Section 4) ── */}
+          <EmptyPortfolioState />
+
+          {/* ── Section 3 — Recent activity + New workspace ── */}
+          <section style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24, alignItems: 'start' }}>
+            <ActivityFeed hasPortfolio={false} />
+            <NewWorkspaceCard />
+          </section>
+
+          {/* ── Section 5 — Next steps ── */}
+          <section>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+              <NextStepTile
+                href="/optimize"
+                Icon={TrendingUp}
+                title="Refine this portfolio"
+                description="Switch algorithms, adjust constraints, or add assets in Optimize."
+              />
+              <NextStepTile
+                href="/risk"
+                Icon={Shield}
+                title="Stress-test it"
+                description="Run Monte Carlo, VaR, CVaR, and regime detection in Risk."
+              />
+              <NextStepTile
+                href="/research"
+                Icon={Sparkles}
+                title="Ask Claude"
+                description="Get a natural-language explanation of what's driving your portfolio's risk."
+              />
+            </div>
+          </section>
+        </>
       )}
-
-      {/* ── Quick actions ── stagger 3 (or 2 when no portfolio) */}
-      <section>
-        <SectionLabel>Quick Actions</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-          <ActionCard href="/optimize" Icon={TrendingUp} title="Build Portfolio" description="Select assets, run the efficient frontier, pick weights." />
-          <ActionCard href="/backtest" Icon={LineChart}  title="Backtest"        description="Walk-forward simulation with transaction costs and slippage." />
-          <ActionCard href="/risk"     Icon={ShieldAlert} title="Risk Analysis"  description="VaR, CVaR, stress tests, correlation matrix, rolling Sharpe." />
-        </div>
-      </section>
-
-      {/* ── Market snapshot ── stagger 4 (or 3 when no portfolio) */}
-      <section>
-        <SectionLabel>Market Snapshot</SectionLabel>
-        <MarketSnapshot />
-      </section>
-
     </div>
   );
 }

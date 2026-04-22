@@ -202,15 +202,19 @@ class SnapshotItem(BaseModel):
 
 
 @router.get("/market-snapshot", response_model=list[SnapshotItem])
-async def market_snapshot() -> list[SnapshotItem]:
-    """Return last-price, 1-day change, and 30-day sparkline for major tickers."""
+async def market_snapshot(
+    tickers: list[str] | None = Query(default=None, description="Custom ticker list; omit for the default set"),
+) -> list[SnapshotItem]:
+    """Return last-price, 1-day change, and 30-day sparkline for a set of tickers."""
     from datetime import datetime, timedelta
 
     end_date = datetime.today().strftime("%Y-%m-%d")
     start_date = (datetime.today() - timedelta(days=40)).strftime("%Y-%m-%d")
 
+    ticker_list = [t.upper() for t in tickers] if tickers else _SNAPSHOT_TICKERS
+
     results: list[SnapshotItem] = []
-    for ticker in _SNAPSHOT_TICKERS:
+    for ticker in ticker_list:
         try:
             raw = fetch_prices([ticker], start_date, end_date, "daily")
             if raw.empty:
