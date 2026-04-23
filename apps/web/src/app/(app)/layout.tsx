@@ -291,7 +291,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {/* Centered content well */}
             <div
               style={{
-                maxWidth: 1600,
+                maxWidth: 1440,
                 margin: '0 auto',
                 paddingLeft: 32,
                 paddingRight: 32,

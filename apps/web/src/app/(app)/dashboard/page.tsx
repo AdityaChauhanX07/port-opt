@@ -125,7 +125,7 @@ function ActivityRow({ entry, first }: { entry: ActivityEntry; first: boolean })
         display: 'flex',
         alignItems: 'flex-start',
         gap: 12,
-        padding: '16px',
+        padding: '12px 16px',
         borderTop: first ? 'none' : '1px solid var(--border-subtle)',
         background: hovered ? '#0F0F12' : 'transparent',
         marginLeft: -16,
@@ -291,6 +291,60 @@ function NewWorkspaceCard() {
 type Period = '1D' | '1W' | '1M' | '3M' | '1Y';
 const PERIODS: Period[] = ['1D', '1W', '1M', '3M', '1Y'];
 
+// Deterministic PRNG seeded by ticker + period string
+function hashSeed(s: string): number {
+  let h = 1779033703 ^ s.length;
+  for (let i = 0; i < s.length; i++) {
+    h = Math.imul(h ^ s.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return h >>> 0;
+}
+
+function seededRng(seed: number): () => number {
+  let s = (seed | 1) >>> 0;
+  return () => {
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    return (s >>> 0) / 4294967296;
+  };
+}
+
+const PERIOD_CONFIG: Record<Period, { points: number; amplitude: number; trend: number }> = {
+  '1D': { points: 24,  amplitude: 0.01, trend: 0      },
+  '1W': { points: 7,   amplitude: 0.03, trend: 0      },
+  '1M': { points: 30,  amplitude: 0.08, trend: 0.001  },
+  '3M': { points: 90,  amplitude: 0.15, trend: 0.002  },
+  '1Y': { points: 252, amplitude: 0.30, trend: 0.003  },
+};
+
+function generateMockSparkline(ticker: string, period: Period): number[] {
+  const { points, amplitude, trend } = PERIOD_CONFIG[period];
+  const rng = seededRng(hashSeed(ticker + period));
+  const step = (amplitude * 2) / Math.sqrt(points);
+  const values: number[] = [100];
+  for (let i = 1; i < points; i++) {
+    const noise = (rng() - 0.5) * step;
+    values.push(values[i - 1] * (1 + trend + noise));
+  }
+  return values;
+}
+
+// 60/40 benchmark: mock 30-day index (base 100), slight upward drift ending with a small down day
+const SIXTY_FORTY_SPARKLINE: number[] = [
+   99.10,  99.28,  99.45,  99.22,  99.41,  99.83, 100.12,  99.98, 100.31, 100.52,
+  100.44, 100.71, 100.93, 101.12, 101.04, 101.33, 101.52, 101.41, 101.74, 101.92,
+  102.18, 102.03, 102.31, 102.51, 102.73, 102.61, 102.84, 103.02, 102.83, 102.34,
+];
+const SIXTY_FORTY_CARD: AssetCardData = {
+  ticker: '60/40',
+  price:     102.34,
+  changePct: -0.47,
+  sparkline: SIXTY_FORTY_SPARKLINE,
+  isBenchmark: true,
+};
+
 function Sparkline({ values, positive }: { values: number[]; positive: boolean }) {
   if (values.length < 2) return <div style={{ height: 40 }} />;
   const min = Math.min(...values);
@@ -333,8 +387,55 @@ interface AssetCardData {
   isBenchmark?: boolean;
 }
 
-function AssetCard({ ticker, price, changePct, sparkline = [], isBenchmark = false, isLoading = false }: AssetCardData & { isLoading?: boolean }) {
-  const pos = (changePct ?? 0) >= 0;
+function PeriodButton({ p, selected, onClick }: { p: Period; selected: boolean; onClick: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      key={p}
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: 'none',
+        border: 'none',
+        padding: 0,
+        fontSize: 12,
+        fontFamily: 'var(--font-mono)',
+        cursor: 'pointer',
+        fontWeight: selected ? 500 : 400,
+        fontVariantNumeric: 'tabular-nums',
+        color: selected ? '#EDEDEE' : hovered ? '#A1A1A8' : '#6B6B73',
+        transition: `color var(--duration-micro) var(--ease)`,
+      }}
+    >
+      {p}
+    </button>
+  );
+}
+
+function AssetCard({
+  ticker,
+  price,
+  changePct: apiChangePct,
+  sparkline: apiSparkline = [],
+  isBenchmark = false,
+  isLoading = false,
+  period = '1D',
+}: AssetCardData & { isLoading?: boolean; period?: Period }) {
+
+  const { displaySparkline, displayChangePct } = React.useMemo(() => {
+    if (period === '1D') {
+      return { displaySparkline: apiSparkline, displayChangePct: apiChangePct };
+    }
+    const mock = generateMockSparkline(ticker, period);
+    const pct = mock.length > 1
+      ? ((mock[mock.length - 1] - mock[0]) / mock[0]) * 100
+      : undefined;
+    return { displaySparkline: mock, displayChangePct: pct };
+  }, [ticker, period, apiSparkline, apiChangePct]);
+
+  const pos = (displayChangePct ?? 0) >= 0;
 
   if (isLoading) {
     return (
@@ -387,22 +488,22 @@ function AssetCard({ ticker, price, changePct, sparkline = [], isBenchmark = fal
             fontSize: 12,
             fontFamily: 'var(--font-mono)',
             fontVariantNumeric: 'tabular-nums',
-            color: changePct === undefined
+            color: displayChangePct === undefined
               ? 'var(--text-tertiary)'
               : pos
                 ? 'var(--positive)'
                 : 'var(--negative)',
           }}
         >
-          {changePct !== undefined
-            ? `${pos ? '+' : ''}${changePct.toFixed(2)}%`
+          {displayChangePct !== undefined
+            ? `${pos ? '+' : ''}${displayChangePct.toFixed(2)}%`
             : '—'}
         </span>
       </div>
 
       {/* Sparkline */}
-      {sparkline.length > 1 ? (
-        <Sparkline values={sparkline} positive={pos} />
+      {displaySparkline.length > 1 ? (
+        <Sparkline values={displaySparkline} positive={pos} />
       ) : (
         <div
           style={{
@@ -437,11 +538,8 @@ function AssetCard({ ticker, price, changePct, sparkline = [], isBenchmark = fal
 function PortfolioSnapshot({ portfolioTickers }: { portfolioTickers: string[] }) {
   const [period, setPeriod] = useState<Period>('1D');
 
-  // Fetch portfolio tickers + SPY in one call
-  const snapshotTickers = [...portfolioTickers, 'SPY'];
-
   const { data, isLoading, error } = api.data.portfolioSnapshot.useQuery(
-    { tickers: snapshotTickers },
+    { tickers: portfolioTickers },
     { staleTime: 5 * 60 * 1000, retry: 1 }
   );
 
@@ -451,7 +549,6 @@ function PortfolioSnapshot({ portfolioTickers }: { portfolioTickers: string[] })
   const portfolioItems = portfolioTickers.map(
     (t) => items.find((i) => i.ticker === t) ?? null
   );
-  const spyItem = items.find((i) => i.ticker === 'SPY') ?? null;
 
   // Equal-weight benchmark: average of available portfolio items
   const validItems = portfolioItems.filter((x): x is (typeof items)[number] => x !== null);
@@ -466,8 +563,13 @@ function PortfolioSnapshot({ portfolioTickers }: { portfolioTickers: string[] })
       validItems.reduce((sum, i) => sum + i.sparkline[idx], 0) / validItems.length
     );
   })();
+  // Normalize EW sparkline to a 100-base index for the price display
+  const ewPrice =
+    ewSparkline.length > 1
+      ? parseFloat(((ewSparkline[ewSparkline.length - 1] / ewSparkline[0]) * 100).toFixed(2))
+      : undefined;
 
-  // Final 8 display cells: portfolio (N) + SPY + EW
+  // Final 8 display cells: portfolio assets + EW benchmark + 60/40 benchmark
   const displayCells: Array<{ data: AssetCardData; loading: boolean }> = [
     ...portfolioItems.map((item, i) => ({
       data: item
@@ -476,19 +578,18 @@ function PortfolioSnapshot({ portfolioTickers }: { portfolioTickers: string[] })
       loading: isLoading,
     })),
     {
-      data: spyItem
-        ? { ticker: 'SPY', price: spyItem.price, changePct: spyItem.change_pct, sparkline: spyItem.sparkline, isBenchmark: true }
-        : { ticker: 'SPY', isBenchmark: true },
-      loading: isLoading,
-    },
-    {
       data: {
         ticker: 'EW',
+        price: ewPrice,
         changePct: ewChangePct ?? undefined,
         sparkline: ewSparkline,
         isBenchmark: true,
       },
       loading: isLoading && validItems.length === 0,
+    },
+    {
+      data: SIXTY_FORTY_CARD,
+      loading: false,
     },
   ];
 
@@ -505,27 +606,22 @@ function PortfolioSnapshot({ portfolioTickers }: { portfolioTickers: string[] })
             color: 'var(--text-tertiary)',
           }}
         >
-          Your assets · today
+          {({
+            '1D': 'Your assets · today',
+            '1W': 'Your assets · this week',
+            '1M': 'Your assets · this month',
+            '3M': 'Your assets · last 3 months',
+            '1Y': 'Your assets · last year',
+          } as Record<Period, string>)[period]}
         </p>
         <div style={{ display: 'flex', gap: 12 }}>
           {PERIODS.map((p) => (
-            <button
+            <PeriodButton
               key={p}
-              type="button"
+              p={p}
+              selected={period === p}
               onClick={() => setPeriod(p)}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                fontSize: 12,
-                fontFamily: 'var(--font-mono)',
-                cursor: 'pointer',
-                color: period === p ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {p}
-            </button>
+            />
           ))}
         </div>
       </div>
@@ -550,7 +646,7 @@ function PortfolioSnapshot({ portfolioTickers }: { portfolioTickers: string[] })
                 borderBottom: '1px solid var(--border-subtle)',
               }}
             >
-              <AssetCard {...cell} isLoading={loading} />
+              <AssetCard {...cell} isLoading={loading} period={period} />
             </div>
           ))}
         </div>
@@ -795,11 +891,11 @@ export default function DashboardPage() {
               }}
             >
               <HeroMetric label="ASSETS" value={String(tickers.length)} sub={`${tickers.length} tickers`} mono large />
-              <div style={{ width: 1, flexShrink: 0, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+              <div style={{ width: 1, flexShrink: 0, background: '#1F1F23', alignSelf: 'stretch' }} />
               <HeroMetric label="ALGORITHM" value={algoLabel} sub={algoSublabel} serif />
-              <div style={{ width: 1, flexShrink: 0, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+              <div style={{ width: 1, flexShrink: 0, background: '#1F1F23', alignSelf: 'stretch' }} />
               <HeroMetric label="DATE RANGE" value={`${startYear} → ${endYear}`} sub={durationLabel} mono />
-              <div style={{ width: 1, flexShrink: 0, background: 'var(--border-subtle)', alignSelf: 'stretch' }} />
+              <div style={{ width: 1, flexShrink: 0, background: '#1F1F23', alignSelf: 'stretch' }} />
               <HeroMetric
                 label="FRONTIER SHARPE"
                 value={frontierSharpe != null ? frontierSharpe.toFixed(2) : '—'}
@@ -848,7 +944,7 @@ export default function DashboardPage() {
               <NextStepTile
                 href="/research"
                 Icon={Sparkles}
-                title="Ask Claude"
+                title="Ask Groq"
                 description="Get a natural-language explanation of what's driving your portfolio's risk."
               />
             </div>
@@ -883,7 +979,7 @@ export default function DashboardPage() {
               <NextStepTile
                 href="/research"
                 Icon={Sparkles}
-                title="Ask Claude"
+                title="Ask Groq"
                 description="Get a natural-language explanation of what's driving your portfolio's risk."
               />
             </div>

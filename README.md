@@ -47,7 +47,7 @@ Six optimization approaches, each solving a different version of the allocation 
 
 **Risk analysis.** Historical VaR and CVaR at configurable confidence levels. Monte Carlo simulation with GBM and fan charts. Correlation heatmap with optional 3D globe visualization. Rolling Sharpe and Sortino. Marginal risk contribution per asset. Hidden Markov Model regime detection that identifies bull/bear/neutral market states and shows how your portfolio behaves differently in each. Factor risk decomposition breaking total risk into market, sector, and idiosyncratic components.
 
-**AI research.** Ask natural language questions about your portfolio. Gemini has your actual weights, metrics, regime state, and stress test results in context. "What is driving my portfolio's risk?" gets a specific, quantitative answer referencing your actual numbers.
+**AI research.** Ask natural language questions about your portfolio. Groq (Llama 3.3 70B) has your actual weights, metrics, regime state, and stress test results in context. "What is driving my portfolio's risk?" gets a specific, quantitative answer referencing your actual numbers.
 
 ---
 
@@ -60,7 +60,7 @@ D3.js                          ->  Charts and data visualization
 React Three Fiber              ->  3D correlation globe
 tRPC + Zustand                 ->  Type-safe API + client state
 FastAPI + yfinance             ->  Price data service (Python, only server component)
-Google Gemini API              ->  AI portfolio analysis
+Groq API (Llama 3.3 70B)       ->  AI portfolio analysis
 ```
 
 Monorepo managed by Turborepo. Radix UI primitives for accessible components. Framer Motion for transitions. Tailwind for styling.
@@ -100,13 +100,13 @@ pnpm dev
 
 Open `http://localhost:3000`.
 
-For AI analysis, add your Gemini API key to `apps/web/.env.local`:
+For AI analysis, add your Groq API key to `apps/web/.env.local`:
 
 ```
-GEMINI_API_KEY=AIza...
+GROQ_API_KEY=gsk_...
 ```
 
-Get a free key from https://aistudio.google.com/apikey
+Get a free key from https://console.groq.com/keys
 
 ---
 

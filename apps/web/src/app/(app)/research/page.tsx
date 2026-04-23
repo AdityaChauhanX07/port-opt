@@ -226,11 +226,11 @@ export default function ResearchPage() {
     },
     onError: (err, variables) => {
       const msg = err.message ?? 'Unknown error';
-      if (msg.includes('GEMINI_API_KEY_NOT_SET')) setApiKeyMissing(true);
+      if (msg.includes('GROQ_API_KEY_NOT_SET')) setApiKeyMissing(true);
       setConversation((prev) => prev.map((p) => p.question === variables.question && p.answer === null ? {
         ...p,
-        error: msg.includes('GEMINI_API_KEY_NOT_SET')
-          ? 'Configure GEMINI_API_KEY in .env.local to enable AI analysis.'
+        error: msg.includes('GROQ_API_KEY_NOT_SET')
+          ? 'Configure GROQ_API_KEY in .env.local to enable AI analysis.'
           : msg.includes('rate_limit') || msg.includes('429')
           ? 'Rate limited — wait a moment and retry.'
           : 'Something went wrong. Please retry.',
@@ -306,7 +306,7 @@ export default function ResearchPage() {
           {apiKeyMissing && (
             <div style={{ borderRadius: 'var(--radius-md)', border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.06)', padding: '10px 16px' }}>
               <p style={{ fontSize: 13, color: 'var(--negative)' }}>
-                Configure <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>GEMINI_API_KEY</code> in{' '}
+                Configure <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>GROQ_API_KEY</code> in{' '}
                 <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>apps/web/.env.local</code> to enable AI analysis.
               </p>
             </div>
@@ -470,7 +470,7 @@ export default function ResearchPage() {
               )}
             </div>
             <p style={{ marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'center' }}>
-              Powered by Gemini · Enter to send
+              Powered by Groq · Enter to send
             </p>
           </div>
         </div>

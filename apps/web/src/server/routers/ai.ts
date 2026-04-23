@@ -1,8 +1,10 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 import { z } from 'zod';
 import { publicProcedure, router } from '../trpc';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY || '',
+});
 
 const ContextSchema = z.object({
   tickers: z.array(z.string()),
@@ -41,8 +43,8 @@ export const aiRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      if (!process.env.GEMINI_API_KEY) {
-        throw new Error('GEMINI_API_KEY_NOT_SET');
+      if (!process.env.GROQ_API_KEY) {
+        throw new Error('GROQ_API_KEY_NOT_SET');
       }
 
       const { question, context } = input;
@@ -84,15 +86,17 @@ Instructions:
 - Use **bold** for key numbers and conclusions.
 - If the user asks something that cannot be determined from the data provided, say so clearly and explain what additional data would be needed.`;
 
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: question }] }],
-        systemInstruction: { role: 'model', parts: [{ text: systemPrompt }] },
+      const completion = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: question },
+        ],
+        max_tokens: 1000,
+        temperature: 0.3,
       });
 
-      const text = result.response.text();
-
+      const text = completion.choices[0]?.message?.content ?? 'No response generated.';
       return { answer: text };
     }),
 });
