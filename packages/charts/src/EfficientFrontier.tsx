@@ -46,6 +46,10 @@ export interface EfficientFrontierProps {
   onPointHover?: (index: number | null, weights: Float64Array | null, metrics: HoverMetrics | null) => void;
   onPointSelect?: (index: number | null) => void;
   onToggleAlgorithm?: (name: string) => void;
+  /** True for single-portfolio algorithms (HRP, ERC, CVaR, Robust) */
+  pointMode?: boolean;
+  /** Label shown next to the optimal dot, e.g. "HRP optimal" */
+  pointModeLabel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +105,8 @@ export function EfficientFrontier({
   onPointHover,
   onPointSelect,
   onToggleAlgorithm,
+  pointMode = false,
+  pointModeLabel = '',
 }: EfficientFrontierProps) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const svgRef        = useRef<SVGSVGElement>(null);
@@ -138,15 +144,33 @@ export function EfficientFrontier({
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
-    // Empty state
-    if (points.length === 0) {
+    // ── Empty state: no data loaded at all ───────────────────────────────────
+    if (points.length === 0 && (!assetStats || assetStats.length === 0)) {
+      const cx = width / 2;
+      const cy = chartH / 2;
       svg.append('text')
-        .attr('x', width / 2).attr('y', chartH / 2)
+        .attr('x', cx).attr('y', cy - 40)
         .attr('text-anchor', 'middle')
         .attr('fill', C.textTertiary)
-        .attr('font-size', 13)
+        .attr('font-size', 10)
+        .attr('font-weight', 600)
+        .attr('letter-spacing', '0.1em')
+        .attr('font-family', 'var(--font-mono, monospace)')
+        .text('NO DATA LOADED');
+      svg.append('text')
+        .attr('x', cx).attr('y', cy - 8)
+        .attr('text-anchor', 'middle')
+        .attr('fill', C.textSecondary)
+        .attr('font-size', 18)
+        .attr('font-family', 'var(--font-serif, Georgia, serif)')
+        .text('Load price data to begin');
+      svg.append('text')
+        .attr('x', cx).attr('y', cy + 22)
+        .attr('text-anchor', 'middle')
+        .attr('fill', C.textTertiary)
+        .attr('font-size', 12)
         .attr('font-family', 'var(--font-sans, system-ui)')
-        .text('Run an optimisation to see the frontier');
+        .text('Pick an asset universe and date range, then click Load Data.');
       return;
     }
 
@@ -173,7 +197,7 @@ export function EfficientFrontier({
     xScaleRef.current = x;
     yScaleRef.current = y;
 
-    // ── Gradient def ────────────────────────────────────────────────────────
+    // ── Gradient + glow filter defs ─────────────────────────────────────────
     const defs = svg.append('defs');
     const grad = defs.append('linearGradient')
       .attr('id', 'ef-line-grad')
@@ -184,6 +208,16 @@ export function EfficientFrontier({
       .attr('y2', 0);
     grad.append('stop').attr('offset', '0%').attr('stop-color', C.accent);
     grad.append('stop').attr('offset', '100%').attr('stop-color', C.accentPurple);
+
+    // Glow filter used for point-mode optimal dot
+    const glowFilter = defs.append('filter')
+      .attr('id', 'ef-opt-glow')
+      .attr('x', '-80%').attr('y', '-80%')
+      .attr('width', '260%').attr('height', '260%');
+    glowFilter.append('feGaussianBlur').attr('stdDeviation', '5').attr('result', 'blur');
+    const feMerge = glowFilter.append('feMerge');
+    feMerge.append('feMergeNode').attr('in', 'blur');
+    feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
 
     const g = svg.append('g').attr('transform', `translate(${M.left},${M.top})`);
 
@@ -214,7 +248,7 @@ export function EfficientFrontier({
       .call(styleAxis);
 
     // ── Capital Market Line ───────────────────────────────────────────────────
-    if (bestIdx != null && points[bestIdx] && points.length > 1) {
+    if (!pointMode && bestIdx != null && points[bestIdx] && points.length > 1) {
       const bp = points[bestIdx]!;
       const rfPct = rf * 100;
       const slope = (bp.return * 100 - rfPct) / (bp.risk * 100 || 1);
@@ -229,7 +263,8 @@ export function EfficientFrontier({
         .attr('pointer-events', 'none');
     }
 
-    // ── Asset diamonds (no labels) ────────────────────────────────────────────
+    // ── Asset diamonds — 50% opacity when no results yet ─────────────────────
+    const assetOpacity = points.length === 0 ? 0.5 : 1;
     if (assetStats && assetStats.length > 0) {
       assetStats.forEach((a) => {
         g.append('path')
@@ -237,12 +272,25 @@ export function EfficientFrontier({
           .attr('fill', C.surface)
           .attr('stroke', C.textSecondary)
           .attr('stroke-width', 1.5)
+          .attr('opacity', assetOpacity)
           .attr('pointer-events', 'none');
       });
     }
 
-    // ── Frontier line (gradient) ──────────────────────────────────────────────
-    if (points.length > 1) {
+    // ── State 2: data loaded, no optimization yet ─────────────────────────────
+    if (points.length === 0) {
+      g.append('text')
+        .attr('x', iW / 2).attr('y', iH / 2)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#A1A1A8')
+        .attr('font-size', 14)
+        .attr('font-family', 'var(--font-sans, system-ui)')
+        .text('Click Optimize to compute');
+      return;
+    }
+
+    // ── Frontier line (gradient) — frontier mode only ─────────────────────────
+    if (!pointMode && points.length > 1) {
       const lineFn = d3.line<FrontierPoint>()
         .x((p) => x(p.risk   * 100))
         .y((p) => y(p.return * 100))
@@ -257,18 +305,20 @@ export function EfficientFrontier({
         .attr('pointer-events', 'none');
     }
 
-    // ── Frontier dots ─────────────────────────────────────────────────────────
-    g.selectAll<SVGCircleElement, FrontierPoint>('circle.dot')
-      .data(points).join('circle')
-      .attr('class', 'dot')
-      .attr('cx', (p) => x(p.risk   * 100))
-      .attr('cy', (p) => y(p.return * 100))
-      .attr('r', 3)
-      .attr('fill', C.textSecondary)
-      .attr('pointer-events', 'none');
+    // ── Frontier dots — frontier mode only ───────────────────────────────────
+    if (!pointMode) {
+      g.selectAll<SVGCircleElement, FrontierPoint>('circle.dot')
+        .data(points).join('circle')
+        .attr('class', 'dot')
+        .attr('cx', (p) => x(p.risk   * 100))
+        .attr('cy', (p) => y(p.return * 100))
+        .attr('r', 3)
+        .attr('fill', C.textSecondary)
+        .attr('pointer-events', 'none');
+    }
 
-    // ── Max Sharpe halo ───────────────────────────────────────────────────────
-    if (bestIdx != null && points[bestIdx]) {
+    // ── Max Sharpe halo — frontier mode only ─────────────────────────────────
+    if (!pointMode && bestIdx != null && points[bestIdx]) {
       const bp = points[bestIdx]!;
       const bx = x(bp.risk   * 100);
       const by = y(bp.return * 100);
@@ -287,27 +337,77 @@ export function EfficientFrontier({
         .attr('pointer-events', 'none');
     }
 
-    // ── Algorithm overlay markers ─────────────────────────────────────────────
-    algorithmMarkers.forEach((m) => {
-      if (!visibleAlgorithms.has(m.algorithm)) return;
-      const mx   = x(m.vol * 100);
-      const my   = y(m.ret * 100);
-      const meta = ALGO_META[m.algorithm];
-      const color = meta?.color ?? C.textSecondary;
-      const r = 5;
-      let pathD: string;
-      if      (m.algorithm === 'hrp')         pathD = sq(mx, my, r);
-      else if (m.algorithm === 'risk_parity') pathD = tri(mx, my, r);
-      else if (m.algorithm === 'cvar')        pathD = dia(mx, my, r);
-      else                                    pathD = sq(mx, my, r);
-      g.append('path')
-        .attr('d', pathD)
-        .attr('fill', color)
-        .attr('stroke', C.bg)
-        .attr('stroke-width', 1.5)
+    // ── Algorithm overlay markers — frontier mode only ────────────────────────
+    if (!pointMode) {
+      algorithmMarkers.forEach((m) => {
+        if (!visibleAlgorithms.has(m.algorithm)) return;
+        const mx   = x(m.vol * 100);
+        const my   = y(m.ret * 100);
+        const meta = ALGO_META[m.algorithm];
+        const color = meta?.color ?? C.textSecondary;
+        const r = 5;
+        let pathD: string;
+        if      (m.algorithm === 'hrp')         pathD = sq(mx, my, r);
+        else if (m.algorithm === 'risk_parity') pathD = tri(mx, my, r);
+        else if (m.algorithm === 'cvar')        pathD = dia(mx, my, r);
+        else                                    pathD = sq(mx, my, r);
+        g.append('path')
+          .attr('d', pathD)
+          .attr('fill', color)
+          .attr('stroke', C.bg)
+          .attr('stroke-width', 1.5)
+          .attr('pointer-events', 'none');
+      });
+    }
+
+    // ── Point mode: dashed connectors + optimal portfolio dot ─────────────────
+    if (pointMode && points.length === 1) {
+      const opt = points[0]!;
+      const ox = x(opt.risk * 100);
+      const oy = y(opt.return * 100);
+
+      // Dashed spoke lines from optimal point to each asset marker
+      if (assetStats && assetStats.length > 0) {
+        assetStats.forEach((a) => {
+          g.append('line')
+            .attr('x1', ox).attr('y1', oy)
+            .attr('x2', x(a.vol * 100)).attr('y2', y(a.ret * 100))
+            .attr('stroke', C.accent)
+            .attr('stroke-width', 1)
+            .attr('stroke-dasharray', '4,4')
+            .attr('stroke-opacity', 0.15)
+            .attr('pointer-events', 'none');
+        });
+      }
+
+      // Glow halo behind the dot
+      g.append('circle')
+        .attr('cx', ox).attr('cy', oy).attr('r', 16)
+        .attr('fill', C.accent)
+        .attr('fill-opacity', 0.18)
+        .attr('filter', 'url(#ef-opt-glow)')
         .attr('pointer-events', 'none');
-    });
-  }, [points, width, chartH, bestIdx, rf, assetStats, algorithmMarkers, visibleAlgorithms]);
+
+      // Optimal portfolio dot (16px diameter = r 8)
+      g.append('circle')
+        .attr('cx', ox).attr('cy', oy).attr('r', 8)
+        .attr('fill', C.accent)
+        .attr('stroke', C.bg)
+        .attr('stroke-width', 2.5)
+        .attr('pointer-events', 'none');
+
+      // Label beside the dot
+      if (pointModeLabel) {
+        g.append('text')
+          .attr('x', ox + 14).attr('y', oy + 4)
+          .attr('fill', C.accent)
+          .attr('font-size', 12)
+          .attr('font-family', 'var(--font-mono, monospace)')
+          .attr('pointer-events', 'none')
+          .text(pointModeLabel);
+      }
+    }
+  }, [points, width, chartH, bestIdx, rf, assetStats, algorithmMarkers, visibleAlgorithms, pointMode, pointModeLabel]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -455,8 +555,23 @@ export function EfficientFrontier({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-      {/* Algorithm toggle row */}
-      {onToggleAlgorithm && (
+      {/* Point-mode contextual note */}
+      {pointMode && points.length > 0 && (
+        <p
+          style={{
+            paddingLeft: M.left,
+            paddingBottom: 8,
+            fontSize: 12,
+            fontFamily: 'var(--font-mono, monospace)',
+            color: '#6B6B73',
+          }}
+        >
+          Single-portfolio optimisation — drag is disabled
+        </p>
+      )}
+
+      {/* Algorithm toggle row — frontier mode only */}
+      {!pointMode && onToggleAlgorithm && (
         <div
           style={{
             display: 'flex',

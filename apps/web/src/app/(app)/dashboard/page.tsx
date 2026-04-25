@@ -836,7 +836,7 @@ export default function DashboardPage() {
           : 'var(--negative)';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 40, paddingBottom: 64 }}>
+    <div className="slide-enter-content" style={{ display: 'flex', flexDirection: 'column', gap: 40, paddingBottom: 64 }}>
 
       {hasPortfolio ? (
         <>

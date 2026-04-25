@@ -37,16 +37,25 @@ function defaultDateRange() {
 const PPY: Record<string, number> = { daily: 252, weekly: 52, monthly: 12 };
 
 const ALGORITHM_TABS = [
-  { value: 'markowitz',       label: 'MVO'    },
-  { value: 'hrp',             label: 'HRP'    },
-  { value: 'risk_parity',     label: 'ERC'    },
-  { value: 'cvar',            label: 'CVaR'   },
-  { value: 'robust',          label: 'Robust' },
-  { value: 'black_litterman', label: 'B-L'    },
+  { value: 'markowitz',       label: 'MVO',    name: 'Markowitz MVO',   desc: 'Mean-variance frontier'    },
+  { value: 'hrp',             label: 'HRP',    name: 'HRP',             desc: 'Hierarchical risk parity'  },
+  { value: 'risk_parity',     label: 'ERC',    name: 'ERC',             desc: 'Equal risk contribution'   },
+  { value: 'cvar',            label: 'CVaR',   name: 'CVaR',            desc: 'Conditional value at risk' },
+  { value: 'robust',          label: 'Robust', name: 'Robust MVO',      desc: 'Uncertainty-aware MVO'     },
+  { value: 'black_litterman', label: 'B-L',    name: 'Black-Litterman', desc: 'Equilibrium + views'       },
 ];
 
 const OVERLAY_ALGORITHMS = ['hrp', 'risk_parity', 'cvar', 'robust'] as const;
 type OverlayAlgorithm = typeof OVERLAY_ALGORITHMS[number];
+
+const POINT_MODE_ALGORITHMS = new Set(['hrp', 'risk_parity', 'cvar', 'robust']);
+
+const POINT_MODE_LABELS: Record<string, string> = {
+  hrp:          'HRP optimal',
+  risk_parity:  'ERC optimal',
+  cvar:         'CVaR-95% optimal',
+  robust:       'Robust optimal',
+};
 
 const PRESET_OPTIONS = [
   { value: 'custom',      label: 'Custom'       },
@@ -127,6 +136,26 @@ function portfolioStats(
   return { ret, vol, sharpe };
 }
 
+function computeMaxDrawdown(
+  returns: Float64Array,
+  nPeriods: number,
+  nAssets: number,
+  weights: number[] | Float64Array,
+): number {
+  let peak = 1;
+  let value = 1;
+  let maxDD = 0;
+  for (let t = 0; t < nPeriods; t++) {
+    let r = 0;
+    for (let a = 0; a < nAssets; a++) r += (weights[a] ?? 0) * (returns[t * nAssets + a] ?? 0);
+    value *= (1 + r);
+    if (value > peak) peak = value;
+    const dd = (peak - value) / peak;
+    if (dd > maxDD) maxDD = dd;
+  }
+  return maxDD;
+}
+
 function computeAssetStats(
   returns: Float64Array,
   nPeriods: number,
@@ -182,6 +211,80 @@ function MetricDisplay({
           {displayed}
         </motion.p>
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Horizontal metrics strip
+// ---------------------------------------------------------------------------
+
+interface MetricEntry {
+  label: string;
+  sublabel: string;
+  value: string;
+  color: string;
+}
+
+function MetricsStrip({ entries }: { entries: MetricEntry[] }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        paddingTop: 24,
+        paddingBottom: 24,
+        borderTop: '1px solid var(--border-subtle)',
+        borderBottom: '1px solid var(--border-subtle)',
+      }}
+    >
+      {entries.map((entry, i) => (
+        <div
+          key={entry.label}
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 4,
+            borderLeft: i > 0 ? '1px solid #1F1F23' : 'none',
+            padding: '0 16px',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 500,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: 'var(--text-tertiary)',
+              fontFamily: 'var(--font-sans)',
+            }}
+          >
+            {entry.label}
+          </span>
+          <span
+            style={{
+              fontSize: 28,
+              fontWeight: 600,
+              fontFamily: 'var(--font-mono)',
+              color: entry.color,
+              lineHeight: 1,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {entry.value}
+          </span>
+          <span
+            style={{
+              fontSize: 12,
+              color: '#6B6B73',
+              fontFamily: 'var(--font-sans)',
+            }}
+          >
+            {entry.sublabel}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -321,7 +424,7 @@ function SegmentedControl({
   );
 }
 
-function AlgoTabs({
+function AlgoList({
   value,
   onChange,
 }: {
@@ -329,25 +432,37 @@ function AlgoTabs({
   onChange: (v: Algorithm) => void;
 }) {
   return (
-    <div className="flex flex-wrap border-b border-[var(--border-subtle)]">
-      {ALGORITHM_TABS.map((tab) => (
-        <button
-          key={tab.value}
-          type="button"
-          onClick={() => onChange(tab.value as Algorithm)}
-          className={[
-            'relative px-3 py-2 text-[12px] font-medium transition-colors',
-            'duration-[var(--duration-micro)] outline-none select-none whitespace-nowrap',
-            'after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:content-[""]',
-            'after:transition-colors after:duration-[var(--duration-micro)]',
-            value === tab.value
-              ? 'text-primary after:bg-accent'
-              : 'text-secondary hover:text-primary after:bg-transparent',
-          ].join(' ')}
-        >
-          {tab.label}
-        </button>
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {ALGORITHM_TABS.map((algo) => {
+        const active = value === algo.value;
+        return (
+          <button
+            key={algo.value}
+            type="button"
+            onClick={() => onChange(algo.value as Algorithm)}
+            className={[
+              'flex flex-col justify-center gap-0.5 text-left outline-none select-none',
+              'transition-colors duration-[var(--duration-micro)]',
+              active ? '' : 'hover:bg-[#0F0F12]',
+            ].join(' ')}
+            style={{
+              height: 56,
+              padding: '0 16px',
+              background: active ? '#17171A' : 'transparent',
+              border: 'none',
+              borderLeft: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+              cursor: 'pointer',
+            }}
+          >
+            <span style={{ fontSize: 14, fontWeight: 500, color: '#EDEDEE', lineHeight: 1.3 }}>
+              {algo.name}
+            </span>
+            <span style={{ fontSize: 12, color: '#6B6B73', lineHeight: 1.3 }}>
+              {algo.desc}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -454,59 +569,156 @@ function BlViewItem({
 }
 
 // ---------------------------------------------------------------------------
-// B-L posterior vs implied returns chart (unchanged)
+// B-L posterior vs implied returns chart — hero section
 // ---------------------------------------------------------------------------
 
 function BlReturnsChart({
   tickers,
   implied,
   posterior,
+  views,
 }: {
   tickers: string[];
   implied: Float64Array;
   posterior: Float64Array;
+  views: BlViewRow[];
 }) {
   const n = tickers.length;
+
+  // Find the shared max-abs for the zero-baseline chart
   let maxAbs = 1e-12;
   for (let i = 0; i < n; i++) {
     maxAbs = Math.max(maxAbs, Math.abs(implied[i] ?? 0), Math.abs(posterior[i] ?? 0));
   }
 
+  // For zero-baseline: positive goes right, negative goes left from center (50%)
+  function barStyle(val: number, color: string): React.CSSProperties {
+    const frac = Math.abs(val) / maxAbs; // 0–1
+    const isNeg = val < 0;
+    return {
+      position: 'absolute' as const,
+      top: 0,
+      bottom: 0,
+      left: isNeg ? `${(0.5 - frac * 0.5) * 100}%` : '50%',
+      width: `${frac * 50}%`,
+      background: color,
+      borderRadius: 2,
+      transition: 'left var(--duration-micro) var(--ease), width var(--duration-micro) var(--ease)',
+    };
+  }
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-4 mb-1">
-        <span className="flex items-center gap-1.5 text-[11px] text-tertiary">
-          <span className="inline-block w-3 h-1.5 rounded-sm bg-[var(--border-strong)]" />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Section title */}
+      <p style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}>
+        Expected returns — implied vs posterior
+      </p>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
+          <span style={{ display: 'inline-block', width: 16, height: 8, borderRadius: 2, background: '#3A3A42' }} />
           Implied
         </span>
-        <span className="flex items-center gap-1.5 text-[11px] text-tertiary">
-          <span className="inline-block w-3 h-1.5 rounded-sm bg-accent" />
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
+          <span style={{ display: 'inline-block', width: 16, height: 8, borderRadius: 2, background: '#3B82F6' }} />
           Posterior
         </span>
       </div>
-      {tickers.map((ticker, i) => {
-        const imp  = (implied[i]   ?? 0) * 100;
-        const post = (posterior[i] ?? 0) * 100;
-        const impW  = Math.abs(implied[i]   ?? 0) / maxAbs;
-        const postW = Math.abs(posterior[i] ?? 0) / maxAbs;
-        const postColor = post > imp ? 'var(--positive)' : post < imp ? 'var(--negative)' : 'var(--accent)';
-        return (
-          <div key={ticker} className="grid grid-cols-[56px_1fr_52px] items-center gap-2">
-            <span className="mono text-[11px] text-secondary truncate">{ticker}</span>
-            <div className="flex flex-col gap-0.5">
-              <div className="h-1.5 rounded-sm bg-[var(--surface)] overflow-hidden">
-                <div className="h-full rounded-sm bg-[var(--border-strong)]" style={{ width: `${(impW * 100).toFixed(1)}%` }} />
+
+      {/* One row per asset — implied bar (full height, behind) + posterior bar (inset, in front) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {tickers.map((ticker, i) => {
+          const imp  = implied[i]   ?? 0;
+          const post = posterior[i] ?? 0;
+          const impPct  = (imp  * 100).toFixed(1);
+          const postPct = (post * 100).toFixed(1);
+
+          return (
+            <div
+              key={ticker}
+              style={{ display: 'grid', gridTemplateColumns: '56px 1fr 52px', alignItems: 'center', gap: 8 }}
+            >
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)', textAlign: 'right' }}>
+                {ticker}
+              </span>
+
+              {/* Single 28px track — implied sits full-height, posterior inset 5px on each side */}
+              <div
+                style={{
+                  height: 28,
+                  background: 'var(--surface)',
+                  borderRadius: 3,
+                  overflow: 'hidden',
+                  position: 'relative',
+                }}
+              >
+                {/* Implied bar — full height, rendered first (behind) */}
+                <div style={{ ...barStyle(imp, '#3A3A42'), top: 0, bottom: 0 }} />
+                {/* Posterior bar — inset so both bars are visible when they differ */}
+                <div style={{ ...barStyle(post, '#3B82F6'), top: 6, bottom: 6 }} />
+                {/* Shared zero baseline */}
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1, background: 'var(--border-subtle)' }} />
               </div>
-              <div className="h-1.5 rounded-sm bg-[var(--surface)] overflow-hidden">
-                <div className="h-full rounded-sm" style={{ width: `${(postW * 100).toFixed(1)}%`, background: postColor }} />
+
+              {/* Values: implied (muted) above, posterior (blue) below */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-end' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-tertiary)' }}>{impPct}%</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#3B82F6' }}>{postPct}%</span>
               </div>
             </div>
-            <div className="text-right">
-              <span className="mono text-[10px] text-tertiary">{post.toFixed(1)}%</span>
-            </div>
+          );
+        })}
+      </div>
+
+      {/* Views section — always visible once B-L result is showing */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <p
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: '#6B6B73',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          Views
+        </p>
+        {views.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {views.map((v) => {
+              const assetName = tickers[v.assetIdx] ?? `Asset ${v.assetIdx}`;
+              const label = v.direction === 'returns'
+                ? `${assetName} → ${v.expectedReturn.toFixed(0)}% return, ${Math.round(v.confidence * 100)}% confidence`
+                : `${assetName} outperforms ${tickers[v.targetAssetIdx] ?? `Asset ${v.targetAssetIdx}`} by ${v.expectedReturn.toFixed(0)}%`;
+              return (
+                <span
+                  key={v.id}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '3px 10px',
+                    borderRadius: 4,
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    color: 'var(--text-secondary)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {label}
+                </span>
+              );
+            })}
           </div>
-        );
-      })}
+        ) : (
+          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+            No views — pure equilibrium
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -550,6 +762,11 @@ export default function OptimizePage() {
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [optError,    setOptError]    = useState<string | null>(null);
   const [wasmMissing, setWasmMissing] = useState(false);
+  const [btnPulse, setBtnPulse] = useState(false);
+
+  // ── CVaR / Robust algorithm state ────────────────────────────────────────
+  const [cvarConfidence, setCvarConfidence] = useState(0.95);
+  const [robustGamma,    setRobustGamma]    = useState(0.1);
 
   // ── Black-Litterman state ────────────────────────────────────────────────
   const [blViews,        setBlViews]        = useState<BlViewRow[]>([]);
@@ -675,6 +892,11 @@ export default function OptimizePage() {
     return null;
   }, [hoveredMetrics, frontier, selectedIdx, chartPoints]);
 
+  const maxDrawdown = useMemo<number | null>(() => {
+    if (!displayWeights || !returns || nRetPeriods === 0 || nAssets === 0) return null;
+    return computeMaxDrawdown(returns, nRetPeriods, nAssets, displayWeights);
+  }, [displayWeights, returns, nRetPeriods, nAssets]);
+
   // ── Handlers ────────────────────────────────────────────────────────────
   function handleLoadData() {
     if (localTickers.length === 0) return;
@@ -722,8 +944,8 @@ export default function OptimizePage() {
         switch (name as OverlayAlgorithm) {
           case 'hrp':         weights = await engine.solveHrp(returns, nRetPeriods, nAssets, storeTickers); break;
           case 'risk_parity': { const cov = computeCovariance(returns, nRetPeriods, nAssets); weights = await engine.solveRiskParity(cov, nAssets, lb, ub); break; }
-          case 'cvar':        weights = await engine.solveCvar(returns, nRetPeriods, nAssets, 0.95, longOnly, lb, ub); break;
-          case 'robust':      weights = await engine.solveRobust(returns, nRetPeriods, nAssets, 1.0, longOnly, lb, ub, ppy); break;
+          case 'cvar':        weights = await engine.solveCvar(returns, nRetPeriods, nAssets, cvarConfidence, longOnly, lb, ub); break;
+          case 'robust':      weights = await engine.solveRobust(returns, nRetPeriods, nAssets, robustGamma, longOnly, lb, ub, ppy); break;
         }
         if (weights) {
           const stats = portfolioStats(returns, nRetPeriods, nAssets, weights, rf, ppy);
@@ -736,7 +958,7 @@ export default function OptimizePage() {
         runningRef.current.delete(name);
       }
     },
-    [visibleAlgorithms, algorithmCache, returns, hasData, nPeriods, nAssets, storeTickers, lb, ub, longOnly, rf, ppy, engine, store],
+    [visibleAlgorithms, algorithmCache, returns, hasData, nPeriods, nAssets, storeTickers, lb, ub, longOnly, rf, ppy, engine, store, cvarConfidence, robustGamma],
   );
 
   async function handleOptimize() {
@@ -763,11 +985,11 @@ export default function OptimizePage() {
           store.setWeights(w); store.setFrontier(null); break;
         }
         case 'cvar': {
-          const w = await engine.solveCvar(returns, nRetPeriods, nAssets, 0.95, longOnly, lb, ub);
+          const w = await engine.solveCvar(returns, nRetPeriods, nAssets, cvarConfidence, longOnly, lb, ub);
           store.setWeights(w); store.setFrontier(null); break;
         }
         case 'robust': {
-          const w = await engine.solveRobust(returns, nRetPeriods, nAssets, 1.0, longOnly, lb, ub, ppy);
+          const w = await engine.solveRobust(returns, nRetPeriods, nAssets, robustGamma, longOnly, lb, ub, ppy);
           store.setWeights(w); store.setFrontier(null); break;
         }
         case 'black_litterman': {
@@ -797,7 +1019,19 @@ export default function OptimizePage() {
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
   useKeyboard([
-    { key: 'Enter', meta: true, handler: () => { if (hasData && !isOptimizing) void handleOptimize(); }, ignoreInputs: false },
+    {
+      key: 'Enter', meta: true, ignoreInputs: false,
+      handler: () => {
+        if (!hasData || isOptimizing) return;
+        // Pulse the button for keyboard feedback (respects prefers-reduced-motion)
+        const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!reduced) {
+          setBtnPulse(true);
+          setTimeout(() => setBtnPulse(false), 200);
+        }
+        void handleOptimize();
+      },
+    },
     ...ALGORITHM_TABS.map((tab, i) => ({
       key: String(i + 1),
       handler: () => setAlgorithm(tab.value as Algorithm),
@@ -808,6 +1042,7 @@ export default function OptimizePage() {
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div
+      className="slide-enter-content"
       style={{
         height: 'calc(100vh - 88px)',
         display: 'flex',
@@ -818,7 +1053,6 @@ export default function OptimizePage() {
 
       {/* ══ LEFT PANEL ══════════════════════════════════════════════════════ */}
       <aside
-        data-animate
         style={{
           width: 320,
           flexShrink: 0,
@@ -826,9 +1060,7 @@ export default function OptimizePage() {
           flexDirection: 'column',
           overflow: 'hidden',
           borderRight: '1px solid var(--border-subtle)',
-          '--stagger': 1,
-          '--delay': '100ms',
-        } as React.CSSProperties}
+        }}
       >
         {/* Scrollable sections */}
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
@@ -900,15 +1132,16 @@ export default function OptimizePage() {
 
           {/* ── Algorithm ────────────────────────────────────────────── */}
           <PanelSection title="Algorithm">
-            <div className="-mx-4 -mt-1">
-              <AlgoTabs value={algorithm} onChange={setAlgorithm} />
+            <div className="-mx-4 -mb-4">
+              <AlgoList value={algorithm} onChange={setAlgorithm} />
             </div>
           </PanelSection>
 
-          {/* ── Constraints ──────────────────────────────────────────── */}
+          {/* ── Constraints (algorithm-adaptive) ─────────────────── */}
           <PanelSection title="Constraints" defaultOpen={true}>
             <div className="flex flex-col gap-3">
 
+              {/* Always shown */}
               <ConstraintRow label="Long only">
                 <Switch
                   checked={longOnly}
@@ -936,33 +1169,68 @@ export default function OptimizePage() {
                 onChange={(v) => store.setConstraints({ ub: v })}
               />
 
-              <ConstraintRow label="Risk-free rate">
-                <div className="flex items-center gap-1">
-                  <Input
-                    type="number"
-                    variant="mono"
-                    min={0}
-                    max={0.2}
-                    step={0.001}
-                    value={rf}
-                    onChange={(e) => store.setConstraints({ rf: parseFloat(e.target.value) || 0 })}
-                    className="w-20 h-7 text-[12px]"
+              {/* MVO + Robust + B-L */}
+              {(algorithm === 'markowitz' || algorithm === 'robust' || algorithm === 'black_litterman') && (
+                <ConstraintRow label="Risk-free rate">
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      variant="mono"
+                      min={0}
+                      max={0.2}
+                      step={0.001}
+                      value={rf}
+                      onChange={(e) => store.setConstraints({ rf: parseFloat(e.target.value) || 0 })}
+                      className="w-20 h-7 text-[12px]"
+                    />
+                    <span className="text-[12px] text-tertiary">%</span>
+                  </div>
+                </ConstraintRow>
+              )}
+
+              {/* MVO only: Shrinkage */}
+              {algorithm === 'markowitz' && (
+                <Slider
+                  label="Shrinkage α"
+                  value={shrinkageAlpha}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  format={(v) => v.toFixed(2)}
+                  onChange={(v) => store.setConstraints({ shrinkageAlpha: v })}
+                />
+              )}
+
+              {/* CVaR only: Confidence level */}
+              {algorithm === 'cvar' && (
+                <ConstraintRow label="Confidence level">
+                  <SegmentedControl
+                    options={[
+                      { value: '0.9',  label: '90%' },
+                      { value: '0.95', label: '95%' },
+                      { value: '0.99', label: '99%' },
+                    ]}
+                    value={String(cvarConfidence)}
+                    onChange={(v) => setCvarConfidence(Number(v))}
                   />
-                  <span className="text-[12px] text-tertiary">%</span>
-                </div>
-              </ConstraintRow>
+                </ConstraintRow>
+              )}
 
-              <Slider
-                label="Shrinkage α"
-                value={shrinkageAlpha}
-                min={0}
-                max={1}
-                step={0.05}
-                format={(v) => v.toFixed(2)}
-                onChange={(v) => store.setConstraints({ shrinkageAlpha: v })}
-              />
+              {/* Robust only: Uncertainty radius */}
+              {algorithm === 'robust' && (
+                <Slider
+                  label="Uncertainty radius"
+                  value={robustGamma}
+                  min={0}
+                  max={0.5}
+                  step={0.05}
+                  format={(v) => v.toFixed(2)}
+                  onChange={setRobustGamma}
+                />
+              )}
 
-              {(algorithm === 'markowitz' || algorithm === 'black_litterman') && (
+              {/* MVO + CVaR + Robust + B-L: Frontier points */}
+              {(algorithm === 'markowitz' || algorithm === 'cvar' || algorithm === 'robust' || algorithm === 'black_litterman') && (
                 <Slider
                   label="Frontier points"
                   value={nPoints}
@@ -974,79 +1242,77 @@ export default function OptimizePage() {
                 />
               )}
 
-              {/* ── Black-Litterman extras ─────────────────────────── */}
+              {/* B-L only: Tau + Market return */}
               {algorithm === 'black_litterman' && (
                 <>
-                  <div className="pt-2 -mx-4 px-4 border-t border-[var(--border-subtle)]">
-                    <p className="text-h3 text-tertiary mb-3">Views</p>
-                    <div className="flex flex-col gap-2">
-                      {blViews.length === 0 ? (
-                        <p className="text-[12px] text-tertiary">No views — pure equilibrium</p>
-                      ) : (
-                        blViews.map((view, vi) => (
-                          <BlViewItem
-                            key={view.id}
-                            view={view}
-                            tickers={storeTickers}
-                            nAssets={nAssets}
-                            onUpdate={(patch) =>
-                              setBlViews((prev) => prev.map((v, i) => (i === vi ? { ...v, ...patch } : v)))
-                            }
-                            onDelete={() => setBlViews((prev) => prev.filter((_, i) => i !== vi))}
-                          />
-                        ))
-                      )}
-                      <button
-                        type="button"
-                        disabled={nAssets < 1}
-                        onClick={() =>
-                          setBlViews((prev) => [
-                            ...prev,
-                            { id: Math.random().toString(36).slice(2), assetIdx: 0, direction: 'returns', targetAssetIdx: Math.min(1, nAssets - 1), expectedReturn: 10, confidence: 0.5 },
-                          ])
-                        }
-                        className="text-[12px] text-accent hover:text-accent-hover transition-colors disabled:opacity-40"
-                      >
-                        + Add view
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 -mx-4 px-4 border-t border-[var(--border-subtle)]">
-                    <p className="text-h3 text-tertiary mb-3">B-L Parameters</p>
-                    <div className="flex flex-col gap-3">
-                      <Slider
-                        label="Prior uncertainty (τ)"
-                        value={blTau}
-                        min={0.01}
-                        max={0.20}
-                        step={0.01}
-                        format={(v) => v.toFixed(2)}
-                        onChange={setBlTau}
+                  <Slider
+                    label="Prior uncertainty (τ)"
+                    value={blTau}
+                    min={0.01}
+                    max={0.20}
+                    step={0.01}
+                    format={(v) => v.toFixed(2)}
+                    onChange={setBlTau}
+                  />
+                  <ConstraintRow label="Market return">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        variant="mono"
+                        step={0.1}
+                        placeholder={`${(autoMarketReturn * 100).toFixed(1)}`}
+                        value={blMarketReturn !== null ? (blMarketReturn * 100).toFixed(1) : ''}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          setBlMarketReturn(isNaN(v) ? null : v / 100);
+                        }}
+                        className="w-20 h-7 text-[12px]"
                       />
-                      <ConstraintRow label="Market return">
-                        <div className="flex items-center gap-1">
-                          <Input
-                            type="number"
-                            variant="mono"
-                            step={0.1}
-                            placeholder={`${(autoMarketReturn * 100).toFixed(1)}`}
-                            value={blMarketReturn !== null ? (blMarketReturn * 100).toFixed(1) : ''}
-                            onChange={(e) => {
-                              const v = parseFloat(e.target.value);
-                              setBlMarketReturn(isNaN(v) ? null : v / 100);
-                            }}
-                            className="w-20 h-7 text-[12px]"
-                          />
-                          <span className="text-[12px] text-tertiary">%</span>
-                        </div>
-                      </ConstraintRow>
+                      <span className="text-[12px] text-tertiary">%</span>
                     </div>
-                  </div>
+                  </ConstraintRow>
                 </>
               )}
+
             </div>
           </PanelSection>
+
+          {/* ── B-L Views (separate section) ─────────────────────── */}
+          {algorithm === 'black_litterman' && (
+            <PanelSection title="Views" defaultOpen={true}>
+              <div className="flex flex-col gap-2">
+                {blViews.length === 0 ? (
+                  <p className="text-[12px] text-tertiary">No views — pure equilibrium</p>
+                ) : (
+                  blViews.map((view, vi) => (
+                    <BlViewItem
+                      key={view.id}
+                      view={view}
+                      tickers={storeTickers}
+                      nAssets={nAssets}
+                      onUpdate={(patch) =>
+                        setBlViews((prev) => prev.map((v, i) => (i === vi ? { ...v, ...patch } : v)))
+                      }
+                      onDelete={() => setBlViews((prev) => prev.filter((_, i) => i !== vi))}
+                    />
+                  ))
+                )}
+                <button
+                  type="button"
+                  disabled={nAssets < 1}
+                  onClick={() =>
+                    setBlViews((prev) => [
+                      ...prev,
+                      { id: Math.random().toString(36).slice(2), assetIdx: 0, direction: 'returns', targetAssetIdx: Math.min(1, nAssets - 1), expectedReturn: 10, confidence: 0.5 },
+                    ])
+                  }
+                  className="text-[12px] text-accent hover:text-accent-hover transition-colors disabled:opacity-40"
+                >
+                  + Add view
+                </button>
+              </div>
+            </PanelSection>
+          )}
 
         </div>{/* end scrollable sections */}
 
@@ -1068,6 +1334,12 @@ export default function OptimizePage() {
             disabled={!hasData}
             onClick={handleOptimize}
             className="w-full"
+            style={{
+              transform: btnPulse ? 'scale(0.97)' : 'scale(1)',
+              transition: btnPulse
+                ? 'transform 100ms ease-out'
+                : 'transform 100ms ease-out',
+            }}
           >
             {isOptimizing ? 'Optimizing…' : 'Optimize'}
           </Button>
@@ -1085,8 +1357,7 @@ export default function OptimizePage() {
 
       {/* ══ RIGHT PANEL ═════════════════════════════════════════════════════ */}
       <div
-        data-animate
-        style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 32, '--stagger': 2, '--delay': '100ms' } as React.CSSProperties}
+        style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 32 }}
         className="flex flex-col gap-5"
       >
         {/* Error banners */}
@@ -1136,22 +1407,70 @@ export default function OptimizePage() {
           onPointHover={handlePointHover}
           onPointSelect={handlePointSelect}
           onToggleAlgorithm={hasData ? handleToggleAlgorithm : undefined}
+          pointMode={POINT_MODE_ALGORITHMS.has(algorithm)}
+          pointModeLabel={POINT_MODE_LABELS[algorithm] ?? ''}
         />
 
-        {/* B-L posterior vs implied */}
+        {/* B-L hero: implied vs posterior — full width, above metrics */}
         {algorithm === 'black_litterman' && blImpliedRets && blPosteriorMu && storeTickers.length > 0 && (
-          <Card padding="md">
-            <p className="mb-4 text-h3 text-tertiary">Expected Returns — Implied vs Posterior</p>
-            <BlReturnsChart tickers={storeTickers} implied={blImpliedRets} posterior={blPosteriorMu} />
-          </Card>
+          <div
+            style={{
+              padding: '20px 0',
+              borderTop: '1px solid var(--border-subtle)',
+              borderBottom: '1px solid var(--border-subtle)',
+            }}
+          >
+            <BlReturnsChart
+              tickers={storeTickers}
+              implied={blImpliedRets}
+              posterior={blPosteriorMu}
+              views={blViews}
+            />
+          </div>
         )}
 
-        {/* Weight Allocation (60%) + Portfolio Metrics (40%) */}
-        <div style={{ display: 'flex', gap: 20 }}>
+        {/* Portfolio metrics strip — hidden until data is loaded */}
+        {hasData && (
+          <MetricsStrip
+            entries={[
+              {
+                label: 'Return',
+                sublabel: 'annualized',
+                value: metrics?.ret != null
+                  ? `${metrics.ret >= 0 ? '+' : ''}${(metrics.ret * 100).toFixed(2)}%`
+                  : '—',
+                color: metrics?.ret != null
+                  ? (metrics.ret >= 0 ? 'var(--positive)' : 'var(--negative)')
+                  : 'var(--text-tertiary)',
+              },
+              {
+                label: 'Volatility',
+                sublabel: 'annualized',
+                value: metrics?.vol != null ? `${(metrics.vol * 100).toFixed(2)}%` : '—',
+                color: metrics?.vol != null ? '#EDEDEE' : 'var(--text-tertiary)',
+              },
+              {
+                label: 'Sharpe',
+                sublabel: 'risk-adjusted',
+                value: metrics?.sharpe != null ? metrics.sharpe.toFixed(3) : '—',
+                color: metrics?.sharpe != null
+                  ? (metrics.sharpe > 0.8 ? 'var(--positive)' : metrics.sharpe >= 0.5 ? 'var(--text-primary)' : 'var(--warning)')
+                  : 'var(--text-tertiary)',
+              },
+              {
+                label: 'Max Drawdown',
+                sublabel: 'historical',
+                value: maxDrawdown != null ? `-${(maxDrawdown * 100).toFixed(2)}%` : '—',
+                color: maxDrawdown != null ? '#EF4444' : 'var(--text-tertiary)',
+              },
+            ]}
+          />
+        )}
 
-          {/* Weight allocation */}
-          <div style={{ flex: '0 0 calc(60% - 10px)', minWidth: 0 }}>
-            <p className="text-h3 text-tertiary mb-4">
+        {/* Weight allocation — full-width, hidden until data is loaded */}
+        {hasData && storeTickers.length > 0 && (
+          <div>
+            <p className="text-h3 text-tertiary mb-3">
               Weight Allocation
               {hoveredIdx != null && (
                 <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-tertiary)', marginLeft: 8 }}>
@@ -1159,45 +1478,14 @@ export default function OptimizePage() {
                 </span>
               )}
             </p>
-            {displayWeights && storeTickers.length > 0 ? (
-              <WeightBar weights={displayWeights} tickers={storeTickers} />
-            ) : (
-              <p className="text-[13px] text-tertiary">
-                {hasData ? 'Run optimisation to see weights' : 'Load data first'}
-              </p>
-            )}
+            {/* Show empty bars before first optimisation, real bars after */}
+            <WeightBar
+              weights={displayWeights ?? new Array(storeTickers.length).fill(0)}
+              tickers={storeTickers}
+              longOnly={longOnly}
+            />
           </div>
-
-          {/* Portfolio metrics */}
-          <div style={{ flex: '0 0 calc(40% - 10px)', minWidth: 0 }}>
-            <p className="text-h3 text-tertiary mb-4">Portfolio Metrics</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              <MetricCard
-                label="Return"
-                value={metrics?.ret != null
-                  ? `${metrics.ret >= 0 ? '+' : ''}${(metrics.ret * 100).toFixed(2)}%`
-                  : '—'}
-                color={metrics?.ret != null
-                  ? (metrics.ret >= 0 ? 'positive' : 'negative')
-                  : undefined}
-              />
-              <MetricCard
-                label="Volatility"
-                value={metrics?.vol != null
-                  ? `${(metrics.vol * 100).toFixed(2)}%`
-                  : '—'}
-              />
-              <MetricCard
-                label="Sharpe"
-                value={metrics?.sharpe != null ? metrics.sharpe.toFixed(3) : '—'}
-                color={metrics?.sharpe != null
-                  ? (metrics.sharpe > 1.0 ? 'positive' : metrics.sharpe >= 0.5 ? undefined : 'warning')
-                  : undefined}
-              />
-            </div>
-          </div>
-
-        </div>
+        )}
       </div>
 
     </div>

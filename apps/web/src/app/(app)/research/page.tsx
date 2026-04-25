@@ -83,7 +83,7 @@ function MarkdownText({ text }: { text: string }) {
     }
     const paras: string[] = [];
     while (i < lines.length && lines[i]!.trim() && !/^(#{1,3}|\s*[-*]\s|\d+\.\s)/.test(lines[i]!)) { paras.push(lines[i]!); i++; }
-    nodes.push(<p key={key++} style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.6, margin: '4px 0' }}>{inline(paras.join(' '))}</p>);
+    nodes.push(<p key={key++} style={{ fontSize: 15, color: 'var(--text-primary)', lineHeight: 1.7, margin: '4px 0' }}>{inline(paras.join(' '))}</p>);
   }
   return <div>{nodes}</div>;
 }
@@ -101,19 +101,76 @@ const ALGO_LABELS: Record<string, string> = {
   black_litterman: 'Black-Litterman',
 };
 
-const SUGGESTED_QUESTIONS = [
-  "What's driving my portfolio's risk?",
-  'How would rising rates affect my allocation?',
-  'Compare my Sharpe to typical benchmarks',
-  'What if I removed the lowest-weight asset?',
-  "How did the portfolio behave during COVID?",
-];
+const SUGGESTION_GROUPS = [
+  {
+    category: 'Risk & Attribution',
+    questions: [
+      "What's driving my portfolio's risk?",
+      'Which asset contributes most to drawdowns?',
+    ],
+  },
+  {
+    category: 'Scenarios',
+    questions: [
+      'How would rising interest rates affect my allocation?',
+      'What happens if equity volatility doubles?',
+    ],
+  },
+  {
+    category: 'Comparison',
+    questions: [
+      'Compare my Sharpe ratio to a 60/40 portfolio',
+      'How does my allocation differ from Risk Parity?',
+    ],
+  },
+  {
+    category: 'Historical',
+    questions: [
+      'How did the portfolio behave during COVID?',
+      'What was my worst quarter and why?',
+    ],
+  },
+] as const;
 
 let _nextId = 1;
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+function SuggestionRow({ question, onSubmit, disabled }: { question: string; onSubmit: (q: string) => void; disabled: boolean }) {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <button
+      onClick={() => onSubmit(question)}
+      disabled={disabled}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        textAlign: 'left',
+        background: hovered ? 'var(--bg-inset)' : 'transparent',
+        border: 'none',
+        borderRadius: 'var(--radius)',
+        padding: '12px 0',
+        cursor: 'pointer',
+        transition: `background var(--duration-micro) var(--ease)`,
+      }}
+    >
+      <span style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5 }}>{question}</span>
+      <span style={{
+        fontSize: 14,
+        color: hovered ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+        flexShrink: 0,
+        marginLeft: 12,
+        transition: `color var(--duration-micro) var(--ease)`,
+      }}>→</span>
+    </button>
+  );
+}
 
 function Spinner() {
   return (
@@ -129,54 +186,75 @@ function ContextCard({ store }: { store: PortfolioState }) {
   const cache   = store.algorithmCache[store.activeAlgorithm];
   const algoLabel = ALGO_LABELS[store.activeAlgorithm] ?? store.activeAlgorithm;
 
+  const sortedAssets = store.tickers
+    .map((t, i) => ({ ticker: t, w: weights[i] ?? 0 }))
+    .sort((a, b) => b.w - a.w);
+
+  const showAll = sortedAssets.length <= 8;
+  const displayed = showAll ? sortedAssets : sortedAssets.slice(0, 6);
+  const overflow  = showAll ? 0 : sortedAssets.length - 6;
+
+  const periodLabel = store.frequency === 'weekly' ? 'weeks' : store.frequency === 'monthly' ? 'months' : 'trading days';
+  const contextLine = store.nPeriods > 0
+    ? `Period: ${store.dateRange.start.slice(0, 7)} → ${store.dateRange.end.slice(0, 7)} · ${store.nPeriods.toLocaleString()} ${periodLabel}${cache ? ` · Sharpe ${cache.sharpe.toFixed(3)}` : ''}`
+    : null;
+
   return (
     <Card padding="md">
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <p className="text-h3" style={{ color: 'var(--text-tertiary)' }}>Portfolio context</p>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-tertiary)' }}>{algoLabel}</span>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Portfolio Context
+        </p>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)' }}>{algoLabel}</span>
       </div>
 
       {/* Ticker pills */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: cache ? 12 : 0 }}>
-        {store.tickers
-          .map((t, i) => ({ ticker: t, w: weights[i] ?? 0 }))
-          .sort((a, b) => b.w - a.w)
-          .map(({ ticker, w }) => (
-            <span
-              key={ticker}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                fontFamily: 'var(--font-mono)',
-                fontSize: 12,
-                background: 'var(--surface-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                padding: '2px 8px',
-                color: 'var(--text-primary)',
-              }}
-            >
-              {ticker}
-              <span style={{ color: 'var(--text-tertiary)' }}>{(w * 100).toFixed(1)}%</span>
-            </span>
-          ))}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: contextLine ? 10 : 0 }}>
+        {displayed.map(({ ticker, w }) => (
+          <span
+            key={ticker}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              fontFamily: 'var(--font-mono)',
+              fontSize: 12,
+              background: 'var(--bg-inset)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 4,
+              padding: '2px 8px',
+              color: 'var(--text-primary)',
+            }}
+          >
+            {ticker}
+            <span style={{ color: 'var(--text-tertiary)' }}>{(w * 100).toFixed(1)}%</span>
+          </span>
+        ))}
+        {overflow > 0 && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 12,
+              background: 'var(--bg-inset)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 4,
+              padding: '2px 8px',
+              color: 'var(--text-tertiary)',
+            }}
+          >
+            +{overflow} more
+          </span>
+        )}
       </div>
 
-      {/* Key metrics */}
-      {cache && (
-        <div style={{ display: 'flex', gap: 20 }}>
-          {[
-            { label: 'Return', value: `${(cache.ret * 100).toFixed(1)}%` },
-            { label: 'Vol',    value: `${(cache.vol * 100).toFixed(1)}%` },
-            { label: 'Sharpe', value: cache.sharpe.toFixed(2) },
-          ].map(({ label, value }) => (
-            <span key={label} style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-              {label}{' '}
-              <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)', fontWeight: 500 }}>{value}</span>
-            </span>
-          ))}
-        </div>
+      {/* Context line */}
+      {contextLine && (
+        <p style={{ fontSize: 12, fontFamily: 'var(--font-sans)', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+          {contextLine}
+        </p>
       )}
     </Card>
   );
@@ -219,6 +297,10 @@ export default function ResearchPage() {
     }
     return ctx;
   }, [hasPortfolio, store, risk.stressResults]);
+
+  const metricCount = context
+    ? 4 + context.tickers.length + (context.stressResults?.length ?? 0)
+    : 0;
 
   const mutation = api.ai.analyze.useMutation({
     onSuccess: (data, variables) => {
@@ -279,10 +361,16 @@ export default function ResearchPage() {
           style={{ maxWidth: 760, margin: '0 auto', paddingLeft: 24, paddingRight: 24, paddingTop: 8, paddingBottom: 120, display: 'flex', flexDirection: 'column', gap: 32 }}
         >
           {/* Title — stagger 1 */}
+          {/* TODO: past conversations sidebar (slide-in panel, 320px, list of past sessions with date + first question + turn count) */}
           <div>
-            <h1 className="text-display" style={{ color: 'var(--text-primary)', marginBottom: 8 }}>Research</h1>
-            <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-              Ask natural language questions about your portfolio.
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+              Research Notebook
+            </p>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 400, lineHeight: 1.25, color: 'var(--text-primary)', marginBottom: 12 }}>
+              What do you want to know about your portfolio?
+            </h1>
+            <p style={{ fontSize: 15, color: 'var(--text-secondary)', maxWidth: 520, lineHeight: 1.6 }}>
+              Ask anything — risk drivers, scenario analysis, comparisons, historical behavior. Answers are grounded in your actual weights and metrics.
             </p>
           </div>
 
@@ -314,78 +402,94 @@ export default function ResearchPage() {
 
           {/* Suggested questions or conversation — stagger 3 or 4 */}
           {conversation.length === 0 && hasPortfolio && !apiKeyMissing ? (
-            <div>
-              <p className="text-h3" style={{ color: 'var(--text-tertiary)', marginBottom: 12 }}>Suggested questions</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {SUGGESTED_QUESTIONS.map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => submit(q)}
-                    disabled={mutation.isPending}
-                    style={{
-                      background: 'var(--surface)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                      padding: '6px 12px',
-                      fontSize: 13,
-                      color: 'var(--text-secondary)',
-                      cursor: 'pointer',
-                      transition: `color var(--duration-micro) var(--ease), border-color var(--duration-micro) var(--ease), background var(--duration-micro) var(--ease)`,
-                    }}
-                    className="hover:text-primary hover:border-[var(--border-strong)] hover:bg-[var(--surface-elevated)]"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              {SUGGESTION_GROUPS.map((group) => (
+                <div key={group.category}>
+                  <p style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    color: 'var(--text-tertiary)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    marginBottom: 4,
+                  }}>
+                    {group.category}
+                  </p>
+                  <div style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                    {group.questions.map((q) => (
+                      <div key={q} style={{ borderBottom: '1px solid var(--border-subtle)', paddingLeft: 0, paddingRight: 4 }}>
+                        <SuggestionRow question={q} onSubmit={submit} disabled={mutation.isPending} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-              <AnimatePresence initial={false}>
-                {conversation.map((pair) => (
-                  <motion.div
-                    key={pair.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.15, ease: [0.2, 0, 0, 1] }}
-                    style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* + New conversation link */}
+              {conversation.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                  <button
+                    onClick={() => setConversation([])}
+                    style={{ fontSize: 13, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                   >
-                    {/* User bubble — right */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <div style={{
-                        maxWidth: '70%',
-                        background: 'var(--surface-elevated)',
-                        borderRadius: 12,
-                        borderBottomRightRadius: 4,
-                        padding: '8px 12px',
-                      }}>
-                        <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5 }}>{pair.question}</p>
+                    + New conversation
+                  </button>
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+                <AnimatePresence initial={false}>
+                  {conversation.map((pair) => (
+                    <motion.div
+                      key={pair.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.15, ease: [0.2, 0, 0, 1] }}
+                      style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+                    >
+                      {/* User bubble — right */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <div style={{
+                          maxWidth: '70%',
+                          background: 'var(--surface-elevated)',
+                          borderRadius: 12,
+                          borderBottomRightRadius: 4,
+                          padding: '12px',
+                        }}>
+                          <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5 }}>{pair.question}</p>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* AI response — left */}
-                    <div>
-                      {pair.answer !== null ? (
-                        <MarkdownText text={pair.answer} />
-                      ) : pair.error !== null ? (
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                          <p style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 1 }}>{pair.error}</p>
-                          {!pair.error.includes('Configure') && (
-                            <button onClick={() => retry(pair)} style={{ flexShrink: 0, fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                              Retry
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-tertiary)' }}>
-                          <Spinner />
-                          <span style={{ fontSize: 13 }}>Analysing…</span>
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+                      {/* AI response — left */}
+                      <div>
+                        {pair.answer !== null ? (
+                          <>
+                            <MarkdownText text={pair.answer} />
+                            <p style={{ marginTop: 10, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-tertiary)' }}>
+                              Grounded in your portfolio · {metricCount} metrics{store.nPeriods > 0 ? ` · ${store.nPeriods.toLocaleString()} days` : ''}
+                            </p>
+                          </>
+                        ) : pair.error !== null ? (
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                            <p style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 1 }}>{pair.error}</p>
+                            {!pair.error.includes('Configure') && (
+                              <button onClick={() => retry(pair)} style={{ flexShrink: 0, fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                Retry
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-tertiary)' }}>
+                            <Spinner />
+                            <span style={{ fontSize: 13 }}>Analysing…</span>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
             </div>
           )}
 
@@ -403,13 +507,10 @@ export default function ResearchPage() {
         }}>
           <div style={{ maxWidth: 760, margin: '0 auto' }}>
             <div style={{
-              display: 'flex',
-              alignItems: 'flex-end',
-              gap: 8,
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
+              position: 'relative',
+              background: 'var(--bg)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-md)',
-              padding: '6px 6px 6px 12px',
               transition: `border-color var(--duration-micro) var(--ease)`,
             }}
               className="focus-within:border-[var(--border-strong)]"
@@ -420,56 +521,63 @@ export default function ResearchPage() {
                 onChange={(e) => { setInput(e.target.value); autoResize(); }}
                 onKeyDown={handleKeyDown}
                 disabled={mutation.isPending}
-                placeholder="Ask about your portfolio…"
+                placeholder="Ask about your portfolio..."
                 rows={1}
                 style={{
-                  flex: 1,
-                  minHeight: 36,
+                  display: 'block',
+                  width: '100%',
+                  minHeight: 48,
                   maxHeight: 144,
                   background: 'transparent',
                   border: 'none',
                   outline: 'none',
-                  fontSize: 13,
+                  fontSize: 14,
                   color: 'var(--text-primary)',
                   resize: 'none',
                   lineHeight: '22px',
-                  paddingTop: 7,
-                  paddingBottom: 7,
+                  paddingTop: 13,
+                  paddingBottom: 13,
+                  paddingLeft: 16,
+                  paddingRight: 52,
                   overflowY: 'auto',
                 }}
                 className="placeholder:text-tertiary"
                 autoFocus
               />
 
-              {mutation.isPending ? (
-                <div style={{ padding: 6, color: 'var(--text-tertiary)' }}>
-                  <Spinner />
-                </div>
-              ) : (
-                <button
-                  onClick={() => submit(input)}
-                  disabled={!hasInput}
-                  aria-label="Send"
-                  style={{
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 28,
-                    height: 28,
-                    borderRadius: 'var(--radius-sm)',
-                    background: hasInput ? 'var(--accent)' : 'transparent',
-                    border: 'none',
-                    cursor: hasInput ? 'pointer' : 'default',
-                    color: hasInput ? 'white' : 'var(--text-tertiary)',
-                    transition: `background var(--duration-micro) var(--ease), color var(--duration-micro) var(--ease)`,
-                  }}
-                >
-                  <ArrowUp size={14} strokeWidth={2} />
-                </button>
-              )}
+              <div style={{ position: 'absolute', right: 8, bottom: 8 }}>
+                {mutation.isPending ? (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 32, height: 32, color: 'var(--text-tertiary)',
+                  }}>
+                    <Spinner />
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => submit(input)}
+                    disabled={!hasInput}
+                    aria-label="Send"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 32,
+                      height: 32,
+                      borderRadius: '50%',
+                      background: hasInput ? 'var(--accent)' : 'var(--border-subtle)',
+                      border: 'none',
+                      cursor: hasInput ? 'pointer' : 'default',
+                      color: 'white',
+                      transition: `background var(--duration-micro) var(--ease)`,
+                    }}
+                  >
+                    <ArrowUp size={14} strokeWidth={2} />
+                  </button>
+                )}
+              </div>
             </div>
-            <p style={{ marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+            <p style={{ marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
               Powered by Groq · Enter to send
             </p>
           </div>
